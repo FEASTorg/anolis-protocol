@@ -1,4 +1,4 @@
-# Anolis Device Provider Protocol (ADPP) — v1
+# Anolis Device Provider Protocol (ADPP)
 
 This directory defines the **Anolis Device Provider Protocol (ADPP)**, version **v1**.
 
