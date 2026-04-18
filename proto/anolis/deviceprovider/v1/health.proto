@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package anolis.deviceprovider.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// GetHealthRequest requests the current health of the provider and its devices.
+message GetHealthRequest {}
+
+// GetHealthResponse contains provider-level and per-device health snapshots.
+message GetHealthResponse {
+  // Overall provider health.
+  ProviderHealth provider = 1;
+  // Per-device health entries.
+  repeated DeviceHealth devices = 2;
+}
+
+// ProviderHealth describes the provider's ability to service requests.
+message ProviderHealth {
+  // State enumerates the possible provider health states.
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    // Provider is operational.
+    STATE_OK = 1;
+    // Provider is operational but degraded; some requests may fail.
+    STATE_DEGRADED = 2;
+    // Provider cannot service requests.
+    STATE_FAULT = 3;
+  }
+
+  // Current health state of the provider.
+  State state = 1;
+  // Human-readable description of the health state.
+  string message = 2;
+  // Optional diagnostic metrics, e.g. queue_depth, error_rate.
+  map<string, string> metrics = 3;
+}
+
+// DeviceHealth describes the reachability and freshness of a single device.
+message DeviceHealth {
+  // The device this health entry applies to.
+  string device_id = 1;
+
+  // State enumerates the possible device health states.
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    // Device is reachable and producing fresh data.
+    STATE_OK = 1;
+    // Device data is older than its stale_after_ms threshold.
+    STATE_STALE = 2;
+    // Device cannot be reached by the provider.
+    STATE_UNREACHABLE = 3;
+    // Device has reported an internal fault.
+    STATE_FAULT = 4;
+  }
+
+  // Current health state of this device.
+  State state = 2;
+  // Human-readable description of the device health state.
+  string message = 3;
+  // Timestamp of the last successful communication with this device.
+  google.protobuf.Timestamp last_seen = 4;
+  // Optional diagnostic metrics for this device.
+  map<string, string> metrics = 5;
+}

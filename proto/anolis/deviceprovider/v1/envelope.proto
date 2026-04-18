@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package anolis.deviceprovider.v1;
+
+import "anolis/deviceprovider/v1/call.proto";
+import "anolis/deviceprovider/v1/handshake.proto";
+import "anolis/deviceprovider/v1/health.proto";
+import "anolis/deviceprovider/v1/inventory.proto";
+import "anolis/deviceprovider/v1/readiness.proto";
+import "anolis/deviceprovider/v1/status.proto";
+import "anolis/deviceprovider/v1/telemetry.proto";
+
+// Request is the top-level client-to-provider envelope.
+// Each request carries a unique request_id for correlation and exactly one payload.
+message Request {
+  // Unique identifier for this request within the session. Must be echoed in the Response.
+  uint64 request_id = 1;
+
+  // The request payload. Exactly one field must be set.
+  oneof payload {
+    HelloRequest hello = 10;
+    ListDevicesRequest list_devices = 11;
+    DescribeDeviceRequest describe_device = 12;
+    ReadSignalsRequest read_signals = 13;
+    CallRequest call = 14;
+    GetHealthRequest get_health = 15;
+    WaitReadyRequest wait_ready = 16;
+  }
+}
+
+// Response is the top-level provider-to-client envelope.
+// Every response includes a Status and echoes the request_id.
+// Responses may arrive out of order; clients MUST correlate by request_id.
+message Response {
+  // Echoes the request_id from the corresponding Request.
+  uint64 request_id = 1;
+  // Result status. CODE_OK on success; see status.proto for error codes.
+  Status status = 2;
+
+  // The response payload. Present only when status.code == CODE_OK.
+  oneof payload {
+    HelloResponse hello = 10;
+    ListDevicesResponse list_devices = 11;
+    DescribeDeviceResponse describe_device = 12;
+    ReadSignalsResponse read_signals = 13;
+    CallResponse call = 14;
+    GetHealthResponse get_health = 15;
+    WaitReadyResponse wait_ready = 16;
+  }
+}

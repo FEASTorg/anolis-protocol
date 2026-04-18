@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package anolis.deviceprovider.v1;
+
+import "anolis/deviceprovider/v1/value.proto";
+import "google/protobuf/timestamp.proto";
+
+// CallRequest invokes a function on a device. Identify the function by
+// function_id (preferred) or function_name. If both are provided, the
+// provider MUST use function_id.
+message CallRequest {
+  // The device to invoke the function on.
+  string device_id = 1;
+  // Stable numeric identifier of the function to invoke.
+  uint32 function_id = 2;
+  // Human-readable function name; used only if function_id is 0.
+  string function_name = 3;
+  // Named arguments for this call, keyed by ArgSpec.name.
+  map<string, Value> args = 4;
+  // Optional idempotency key. If honored, repeated calls with the same key
+  // are treated as safe retries.
+  string idempotency_key = 5;
+  // Optional deadline for this call. Provider SHOULD respect it.
+  google.protobuf.Timestamp deadline = 6;
+}
+
+// CallResponse contains the results of a function invocation.
+message CallResponse {
+  // The device the function was invoked on.
+  string device_id = 1;
+  // Named result values, keyed by ArgSpec.name from FunctionSpec.results.
+  map<string, Value> results = 2;
+  // Optional operation ID for async tracking. Not used in v1 synchronous model.
+  string operation_id = 3;
+}

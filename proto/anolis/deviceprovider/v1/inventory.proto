@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package anolis.deviceprovider.v1;
+
+import "anolis/deviceprovider/v1/health.proto";
+import "anolis/deviceprovider/v1/types.proto";
+
+// ListDevicesRequest asks the provider for its current device inventory.
+message ListDevicesRequest {
+  // If true, the response will include per-device health entries.
+  bool include_health = 1;
+}
+
+// ListDevicesResponse contains all currently known devices.
+message ListDevicesResponse {
+  // The devices known to this provider.
+  repeated Device devices = 1;
+  // Per-device health entries. Populated only when include_health is true.
+  repeated DeviceHealth device_health = 2;
+}
+
+// DescribeDeviceRequest asks for the full capability set of a single device.
+message DescribeDeviceRequest {
+  // The device to describe.
+  string device_id = 1;
+}
+
+// DescribeDeviceResponse contains the device descriptor and its capabilities.
+message DescribeDeviceResponse {
+  // Device metadata.
+  Device device = 1;
+  // Full capability set including functions and signals.
+  CapabilitySet capabilities = 2;
+}

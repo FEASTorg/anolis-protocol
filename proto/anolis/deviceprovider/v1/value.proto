@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package anolis.deviceprovider.v1;
+
+// ValueType identifies the scalar type of a Value or ArgSpec.
+enum ValueType {
+  VALUE_TYPE_UNSPECIFIED = 0;
+  VALUE_TYPE_BOOL = 1;
+  VALUE_TYPE_INT64 = 2;
+  VALUE_TYPE_UINT64 = 3;
+  VALUE_TYPE_DOUBLE = 4;
+  VALUE_TYPE_STRING = 5;
+  VALUE_TYPE_BYTES = 6;
+}
+
+// Value is a typed scalar used in signal reads, function arguments, and results.
+message Value {
+  // The type discriminator. Must match the populated oneof field.
+  ValueType type = 1;
+
+  oneof kind {
+    bool bool_value = 2;
+    int64 int64_value = 3;
+    uint64 uint64_value = 4;
+    double double_value = 5;
+    string string_value = 6;
+    bytes bytes_value = 7;
+  }
+}
