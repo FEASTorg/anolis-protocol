@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package anolis.deviceprovider.v1;
+
+// WaitReadyRequest asks the provider to block until it is ready to serve requests.
+message WaitReadyRequest {
+  // Optional hint from the client indicating its timeout budget in milliseconds.
+  uint32 max_wait_ms_hint = 1;
+}
+
+// WaitReadyResponse confirms the provider is ready. Diagnostics may include
+// init_time_ms, device_count, firmware version, etc.
+message WaitReadyResponse {
+  // Diagnostic key-value pairs describing provider startup state.
+  map<string, string> diagnostics = 1;
+}

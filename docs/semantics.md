@@ -48,8 +48,8 @@ device-level actions, but Anolis is the sole authority for:
 
 ## 2. Transport and framing
 
-ADPP messages are defined in `protocol.proto` using `Request` and `Response`
-envelopes.
+ADPP messages are defined in `proto/anolis/deviceprovider/v1/envelope.proto`
+using `Request` and `Response` envelopes.
 
 ADPP itself is transport-agnostic. When used over a byte-stream transport
 (recommended for local IPC):

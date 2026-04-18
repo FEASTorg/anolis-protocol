@@ -1,0 +1,121 @@
+syntax = "proto3";
+
+package anolis.deviceprovider.v1;
+
+import "anolis/deviceprovider/v1/value.proto";
+
+// Device describes an addressable hardware unit managed by a provider.
+message Device {
+  // Stable identifier for this device within the provider's scope.
+  string device_id = 1;
+  // Name of the provider managing this device.
+  string provider_name = 2;
+  // Type identifier for this class of device, e.g. "crumbs.motorctl".
+  string type_id = 3;
+  // Version of the device type schema, e.g. "1.0".
+  string type_version = 4;
+  // Human-readable display name for this device.
+  string label = 5;
+  // Bus address or URI, e.g. "0x42", "serial:///dev/ttyACM0".
+  string address = 6;
+  // Arbitrary metadata tags for filtering and display.
+  map<string, string> tags = 7;
+}
+
+// CapabilitySet describes all functions and signals a device exposes.
+message CapabilitySet {
+  // Callable functions on this device.
+  repeated FunctionSpec functions = 1;
+  // Readable signals on this device.
+  repeated SignalSpec signals = 2;
+}
+
+// FunctionSpec describes a single callable function on a device.
+message FunctionSpec {
+  // Stable numeric identifier for this function within its device type.
+  uint32 function_id = 1;
+  // Human-readable function name.
+  string name = 2;
+  // Description of what this function does.
+  string description = 3;
+  // Policy metadata for Anolis mode gating and UI hints.
+  FunctionPolicy policy = 4;
+  // Input argument specifications.
+  repeated ArgSpec args = 5;
+  // Output result specifications.
+  repeated ArgSpec results = 6;
+}
+
+// FunctionPolicy carries hints about when and how a function may be called.
+// In v1, Anolis is the authoritative enforcer; providers may defensively validate.
+message FunctionPolicy {
+  // Category classifies the function's effect for mode gating.
+  enum Category {
+    CATEGORY_UNSPECIFIED = 0;
+    // Read-only; no side effects.
+    CATEGORY_READ = 1;
+    // Configuration change; persistent effect.
+    CATEGORY_CONFIG = 2;
+    // Physical actuation; immediate hardware effect.
+    CATEGORY_ACTUATE = 3;
+  }
+
+  // The function category.
+  Category category = 1;
+  // Runtime modes in which this function is permitted, e.g. ["MANUAL", "AUTO"].
+  repeated string allowed_modes = 2;
+  // Whether this function requires an exclusive lease before it can be called.
+  bool requires_lease = 3;
+  // Safety profile identifier for external safety systems.
+  string safety_profile = 4;
+  // Minimum interval between successive calls in milliseconds.
+  uint32 min_interval_ms = 5;
+  // Whether repeated calls with the same arguments produce the same result.
+  bool is_idempotent = 6;
+}
+
+// SignalSpec describes a single readable signal on a device.
+message SignalSpec {
+  // Stable identifier for this signal within its device type.
+  string signal_id = 1;
+  // Human-readable signal name.
+  string name = 2;
+  // Description of what this signal measures.
+  string description = 3;
+  // Scalar type of this signal's value.
+  ValueType value_type = 4;
+  // Engineering unit, e.g. "°C", "rpm", "V".
+  string unit = 5;
+  // Suggested polling frequency in Hz. Advisory only.
+  double poll_hint_hz = 6;
+  // Duration in milliseconds after which a value should be considered stale.
+  uint32 stale_after_ms = 7;
+}
+
+// ArgSpec describes a single argument or result field for a function.
+message ArgSpec {
+  // Argument name.
+  string name = 1;
+  // Scalar type of this argument.
+  ValueType type = 2;
+  // Engineering unit for numeric arguments, e.g. "%" or "ms".
+  string unit = 3;
+  // Human-readable description.
+  string description = 4;
+  // Whether this argument must be supplied in a CallRequest.
+  bool required = 5;
+  // Minimum allowed value for DOUBLE type arguments.
+  double min_double = 6;
+  // Maximum allowed value for DOUBLE type arguments.
+  double max_double = 7;
+  // Minimum allowed value for INT64 type arguments.
+  int64 min_int64 = 8;
+  // Maximum allowed value for INT64 type arguments.
+  int64 max_int64 = 9;
+  // Minimum allowed value for UINT64 type arguments.
+  uint64 min_uint64 = 10;
+  // Maximum allowed value for UINT64 type arguments.
+  uint64 max_uint64 = 11;
+  // Allowed string values for STRING type arguments (enum constraint).
+  repeated string allowed_values = 12;
+}

@@ -24,6 +24,11 @@ This repository uses semantic versioning tags:
 - Reserve removed field numbers and names.
 - Keep package naming/versioning consistent with the current major contract.
 
+## Enforcement
+
+`buf breaking` is run on every PR against the `main` branch baseline.
+Breaking changes will fail CI and must be accompanied by a major version bump.
+
 ## Consumer Expectations
 
 - Consumers pin explicit `anolis-protocol` versions.

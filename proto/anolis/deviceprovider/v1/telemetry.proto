@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package anolis.deviceprovider.v1;
+
+import "anolis/deviceprovider/v1/value.proto";
+import "google/protobuf/timestamp.proto";
+
+// ReadSignalsRequest asks for the current values of one or more signals.
+// If signal_ids is empty, the provider returns the device's default signal set.
+message ReadSignalsRequest {
+  // The device to read from.
+  string device_id = 1;
+  // Signal identifiers to read. Empty means return the default signal set.
+  repeated string signal_ids = 2;
+  // If set, the provider SHOULD return values no older than this timestamp.
+  google.protobuf.Timestamp min_timestamp = 3;
+}
+
+// ReadSignalsResponse contains the requested signal values.
+message ReadSignalsResponse {
+  // The device these values belong to.
+  string device_id = 1;
+  // The signal values, one entry per resolved signal.
+  repeated SignalValue values = 2;
+}
+
+// SignalValue is a single timestamped reading of a signal.
+message SignalValue {
+  // The signal this value belongs to.
+  string signal_id = 1;
+  // The scalar value of the signal.
+  Value value = 2;
+  // The time at which this value was observed at the source.
+  google.protobuf.Timestamp timestamp = 3;
+  // Data quality indicator for this reading.
+  Quality quality = 4;
+  // Optional metadata, e.g. source, raw_counts.
+  map<string, string> metadata = 5;
+
+  // Quality indicates the reliability of a signal value.
+  enum Quality {
+    QUALITY_UNSPECIFIED = 0;
+    // Value is current and valid.
+    QUALITY_OK = 1;
+    // Value is older than the signal's stale_after_ms threshold.
+    QUALITY_STALE = 2;
+    // The device or sensor has reported a fault.
+    QUALITY_FAULT = 3;
+    // Quality cannot be determined.
+    QUALITY_UNKNOWN = 4;
+  }
+}
