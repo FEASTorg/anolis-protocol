@@ -42,8 +42,20 @@ These concerns are handled by Anolis or deployment-specific infrastructure.
 
 ## Files
 
-- `protocol.proto`  
-  Normative Protobuf schema defining request/response messages.
+**Schema** (`proto/anolis/deviceprovider/v1/`):
+
+- `envelope.proto` — `Request` / `Response` top-level envelopes
+- `status.proto` — `Status` and error codes
+- `handshake.proto` — `HelloRequest` / `HelloResponse`
+- `inventory.proto` — `ListDevices` / `DescribeDevice`
+- `telemetry.proto` — `ReadSignals` / `SignalValue`
+- `call.proto` — `CallRequest` / `CallResponse`
+- `health.proto` — `ProviderHealth` / `DeviceHealth`
+- `readiness.proto` — `WaitReady` request/response
+- `types.proto` — `Device`, `CapabilitySet`, `FunctionSpec`, `ArgSpec`
+- `value.proto` — `Value`, `ValueType`
+
+**Docs**:
 
 - `semantics.md`  
   Normative behavioral semantics: roles, responsibilities, caching rules,
