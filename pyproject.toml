@@ -16,6 +16,9 @@ dependencies = [
 [tool.hatch.version]
 source = "vcs"
 
+[tool.hatch.build]
+artifacts = ["gen/python/**"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["gen/python/anolis"]
 
