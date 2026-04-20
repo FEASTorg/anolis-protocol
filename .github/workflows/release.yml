@@ -42,8 +42,8 @@ jobs:
       - name: Create manifest
         run: |
           cat > manifest.json <<'EOF'
-{"schema_version": 1, "repo": "anolishq/anolis-protocol", "component": "anolis-protocol", "version": "${{ steps.version.outputs.version }}", "platform": "source", "asset": "anolis-protocol-${{ steps.version.outputs.version }}-source.tar.gz", "sha256": "${{ steps.sha.outputs.sha256 }}"}
-EOF
+          {"schema_version": 1, "repo": "anolishq/anolis-protocol", "component": "anolis-protocol", "version": "${{ steps.version.outputs.version }}", "platform": "source", "asset": "anolis-protocol-${{ steps.version.outputs.version }}-source.tar.gz", "sha256": "${{ steps.sha.outputs.sha256 }}"}
+          EOF
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
