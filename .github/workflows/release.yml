@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release anolis-protocol
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Lint protocol with Buf
+        uses: bufbuild/buf-action@v1
+        with:
+          lint: true
+          format: false
+          breaking: false
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create source tarball
+        run: |
+          git archive --format=tar --prefix=anolis-protocol-${{ steps.version.outputs.version }}/ HEAD | gzip > anolis-protocol-${{ steps.version.outputs.version }}-source.tar.gz
+
+      - name: Compute SHA256
+        id: sha
+        run: |
+          sha256sum anolis-protocol-${{ steps.version.outputs.version }}-source.tar.gz | tee SHA256SUMS
+          echo "sha256=$(cut -d' ' -f1 SHA256SUMS)" >> "$GITHUB_OUTPUT"
+
+      - name: Create manifest
+        run: |
+          cat > manifest.json <<'EOF'
+{"schema_version": 1, "repo": "anolishq/anolis-protocol", "component": "anolis-protocol", "version": "${{ steps.version.outputs.version }}", "platform": "source", "asset": "anolis-protocol-${{ steps.version.outputs.version }}-source.tar.gz", "sha256": "${{ steps.sha.outputs.sha256 }}"}
+EOF
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "anolis-protocol ${{ steps.version.outputs.version }}"
+          body: "Release anolis-protocol ${{ steps.version.outputs.version }} source artifacts."
+          draft: false
+          prerelease: false
+          files: |
+            anolis-protocol-${{ steps.version.outputs.version }}-source.tar.gz
+            SHA256SUMS
+            manifest.json
