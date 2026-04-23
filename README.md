@@ -64,3 +64,7 @@ buf generate
 - Breaking wire-contract changes require a major bump.
 - `buf breaking` enforces this automatically on every PR.
 - See `docs/versioning.md`.
+
+## Future Work
+
+- long-term: add `CMakeLists.txt` + cmake config; cut consumers to `find_package` — defer until FetchContent causes pain
