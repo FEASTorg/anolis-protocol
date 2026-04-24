@@ -57,8 +57,6 @@ buf breaking --against "https://github.com/anolishq/anolis-protocol.git#branch=m
 buf generate
 ```
 
-
-
 - Owns ADPP protobuf schema used by `anolis` and providers.
 - Contains protocol-only artifacts (schema + semantics + compatibility docs).
 - Contains no runtime/provider implementation code.
