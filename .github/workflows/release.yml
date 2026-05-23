@@ -97,7 +97,7 @@ jobs:
         run: python -m build --wheel --outdir dist/
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: "anolis-protocol ${{ steps.version.outputs.version }}"
           body: "Release anolis-protocol ${{ steps.version.outputs.version }} source artifacts."
@@ -121,6 +121,6 @@ jobs:
           path: metrics-out/
 
       - name: Upload metrics.json to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: metrics-out/metrics.json
