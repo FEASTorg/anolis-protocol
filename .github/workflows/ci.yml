@@ -1,4 +1,4 @@
-name: buf
+name: CI
 
 on:
   push:
@@ -21,3 +21,17 @@ jobs:
           format: true
           breaking: true
           breaking_against: "https://github.com/anolishq/anolis-protocol.git#branch=main"
+
+  ok:
+    name: ok
+    if: always()
+    needs: [lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Evaluate job results
+        run: |
+          echo "Job results: ${{ toJSON(needs.*.result) }}"
+      - name: Fail if any required job failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
