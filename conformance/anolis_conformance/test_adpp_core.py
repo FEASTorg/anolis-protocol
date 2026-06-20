@@ -1,0 +1,178 @@
+"""ADPP v1 *core protocol* conformance — messages, status, correlation,
+capabilities, and read/call semantics. Assertions follow docs/semantics.md (the
+normative spec); where the spec permits a choice, the test accepts every
+permitted behavior.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from . import spec
+from .checks import assert_status_present
+from .client import AdppClient
+
+
+# ---- handshake / version ------------------------------------------------
+def test_hello_v1_ok(client: AdppClient, profile, codes, status_text) -> None:
+    resp = client.hello()
+    assert_status_present(resp)  # semantics.md §10: every Response carries a Status
+    assert resp.status.code == codes.OK, status_text(resp)
+    assert resp.request_id == 1, "Hello response must echo request_id"
+    assert resp.hello.protocol_version == spec.PROTOCOL_VERSION
+    assert resp.hello.provider_name == profile.expected_provider_name
+
+
+def test_hello_unsupported_version_rejected(client: AdppClient, codes, status_text) -> None:
+    # semantics.md 3: an unsupported version MUST be FAILED_PRECONDITION *or*
+    # UNIMPLEMENTED (both conformant).
+    resp = client.hello(protocol_version="v999")
+    assert resp.status.code in (codes.FAILED_PRECONDITION, codes.UNIMPLEMENTED), (
+        f"non-v1 Hello must be FAILED_PRECONDITION or UNIMPLEMENTED; got {status_text(resp)}"
+    )
+
+
+def test_request_id_correlation(ready_client: AdppClient) -> None:
+    # semantics.md 4: providers MUST echo the request_id of each request.
+    first = ready_client.list_devices().request_id
+    second = ready_client.list_devices().request_id
+    assert second == first + 1, "each response must echo its request's id"
+
+
+# ---- inventory / capabilities ------------------------------------------
+def test_list_devices_ok(ready_client: AdppClient, profile, codes, status_text) -> None:
+    resp = ready_client.list_devices()
+    assert resp.status.code == codes.OK, status_text(resp)
+    if profile.has_mock_devices:
+        assert len(resp.list_devices.devices) >= 1, "conformance config should yield >=1 device"
+
+
+def test_list_devices_include_health(ready_client: AdppClient, profile, codes, status_text) -> None:
+    resp = ready_client.list_devices(include_health=True)
+    assert resp.status.code == codes.OK, status_text(resp)
+    device_ids = {d.device_id for d in resp.list_devices.devices}
+    health_ids = {dh.device_id for dh in resp.list_devices.device_health}
+    # Health entries must reference real devices.
+    unknown = health_ids - device_ids
+    assert not unknown, f"device_health references unknown devices {unknown}"
+    # inventory.proto: when include_health is true the response "will include
+    # per-device health entries". For a profile with mock devices, require it.
+    if profile.has_mock_devices and device_ids:
+        assert health_ids, "include_health=true must populate per-device health entries"
+        missing = device_ids - health_ids
+        assert not missing, f"include_health=true must cover every device; missing {missing}"
+
+
+def test_describe_device(ready_client: AdppClient, codes, status_text) -> None:
+    devices = ready_client.list_devices().list_devices.devices
+    if not devices:
+        pytest.skip("no devices to describe")
+    resp = ready_client.describe_device(devices[0].device_id)
+    assert resp.status.code == codes.OK, status_text(resp)
+    # semantics.md §6.1 requires the COMPLETE CapabilitySet, not a non-empty one —
+    # a zero-capability device is valid ADPP. (A provider that expects capabilities
+    # on its mock devices can assert that in its own profile/suite.)
+    assert resp.describe_device.HasField("capabilities"), "DescribeDevice must return a CapabilitySet"
+
+
+def test_describe_unknown_device_not_found(ready_client: AdppClient, codes, status_text) -> None:
+    resp = ready_client.describe_device("__no_such_device__")
+    assert resp.status.code == codes.NOT_FOUND, (
+        f"unknown device must be CODE_NOT_FOUND; got {status_text(resp)}"
+    )
+
+
+# ---- read / call --------------------------------------------------------
+def test_read_signals_response_shape(ready_client: AdppClient, codes, status_text) -> None:
+    devices = ready_client.list_devices().list_devices.devices
+    if not devices:
+        pytest.skip("no devices to read")
+    resp = ready_client.read_signals(devices[0].device_id)  # default signal set
+    # A default read must succeed, or the mock backend may legitimately report
+    # CODE_UNAVAILABLE — but never an arbitrary error (INTERNAL/INVALID_ARGUMENT/…).
+    assert resp.status.code in (codes.OK, codes.UNAVAILABLE), (
+        f"default read must be OK or UNAVAILABLE; got {status_text(resp)}"
+    )
+    if resp.status.code == codes.OK:
+        for value in resp.read_signals.values:
+            assert value.signal_id, "each SignalValue must carry a signal_id"
+            assert value.HasField("value"), f"signal {value.signal_id} missing a value"
+
+
+def test_read_unknown_signal_consistent(ready_client: AdppClient, codes, status_text) -> None:
+    # semantics.md 7.4: a provider MUST choose ONE consistent behavior for an
+    # unknown signal id — either fail CODE_NOT_FOUND, OR return partial results
+    # that omit the unknown id. Both are conformant; inconsistency is not.
+    devices = ready_client.list_devices().list_devices.devices
+    if not devices:
+        pytest.skip("no devices")
+    dev = devices[0].device_id
+    caps = ready_client.describe_device(dev).describe_device.capabilities
+    if not caps.signals:
+        pytest.skip("device declares no signals")
+    known = caps.signals[0].signal_id
+    unknown = "__no_such_signal__"
+
+    def policy(signal_ids) -> str:
+        resp = ready_client.read_signals(dev, signal_ids)
+        if resp.status.code == codes.NOT_FOUND:
+            return "fail"
+        if resp.status.code == codes.OK:
+            returned = {v.signal_id for v in resp.read_signals.values}
+            # The response carries values for the REQUESTED signals (minus unknown),
+            # never arbitrary/unrelated inventory.
+            assert returned <= set(signal_ids), (
+                f"partial result returned unrequested signals {returned - set(signal_ids)}"
+            )
+            assert unknown not in returned, "partial variant must omit the unknown signal id"
+            if known in signal_ids:
+                assert known in returned, (
+                    "partial variant must still return the known signal, not silently drop it"
+                )
+            return "partial"
+        return pytest.fail(  # type: ignore[return-value]
+            f"unknown-signal read must be NOT_FOUND or OK(partial); got {status_text(resp)}"
+        )
+
+    chosen = policy([known, unknown])
+    # The same policy must hold on repeat and for an unknown-only request.
+    assert policy([known, unknown]) == chosen, "policy must be stable across identical requests"
+    assert policy([unknown]) == chosen, "policy must match for an unknown-only request"
+
+
+def test_call_unknown_function_by_id_rejected(ready_client: AdppClient, codes, status_text) -> None:
+    devices = ready_client.list_devices().list_devices.devices
+    if not devices:
+        pytest.skip("no devices")
+    # semantics.md 8.3: unknown identifiers MUST be CODE_NOT_FOUND.
+    resp = ready_client.call(devices[0].device_id, function_id=999999)
+    assert resp.status.code == codes.NOT_FOUND, (
+        f"unknown function_id must be NOT_FOUND; got {status_text(resp)}"
+    )
+
+
+def test_call_unknown_function_by_name_rejected(ready_client: AdppClient, codes, status_text) -> None:
+    devices = ready_client.list_devices().list_devices.devices
+    if not devices:
+        pytest.skip("no devices")
+    # semantics.md 8.3: unknown identifiers (incl. names) MUST be CODE_NOT_FOUND.
+    resp = ready_client.call(devices[0].device_id, function_name="__no_such_function__")
+    assert resp.status.code == codes.NOT_FOUND, (
+        f"unknown function_name must be NOT_FOUND; got {status_text(resp)}"
+    )
+
+
+def test_call_on_unknown_device_rejected(ready_client: AdppClient, codes, status_text) -> None:
+    resp = ready_client.call("__no_such_device__", function_id=1)
+    assert resp.status.code == codes.NOT_FOUND, (
+        f"call on unknown device must be NOT_FOUND; got {status_text(resp)}"
+    )
+
+
+# ---- health (experimental, opt-in only — deselected from gating) -------
+@pytest.mark.experimental
+def test_get_health_well_formed(ready_client: AdppClient) -> None:
+    # GetHealth is defined but the runtime never calls it (experimental). This
+    # test is deselected from the default gating run (see pytest.ini markers).
+    resp = ready_client.get_health()
+    assert resp.HasField("status"), "GetHealth must return a status"

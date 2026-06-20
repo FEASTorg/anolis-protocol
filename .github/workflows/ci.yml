@@ -22,10 +22,85 @@ jobs:
           breaking: true
           breaking_against: "https://github.com/anolishq/anolis-protocol.git#branch=main"
 
+  conformance:
+    name: conformance (verifier self-tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 exercises the tomli fallback (stdlib tomllib is 3.11+); 3.12 is
+        # the primary lane.
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0 # hatch-vcs needs tags for the version
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1
+        with:
+          setup_only: true
+      - name: Generate Python bindings + package shims
+        run: |
+          buf generate
+          touch gen/python/anolis/__init__.py \
+                gen/python/anolis/deviceprovider/__init__.py \
+                gen/python/anolis/deviceprovider/v1/__init__.py
+          cat > gen/python/protocol_pb2.py <<'EOF'
+          """Compatibility shim: re-exports all ADPP v1 generated classes."""
+          from anolis.deviceprovider.v1.call_pb2 import *
+          from anolis.deviceprovider.v1.envelope_pb2 import *
+          from anolis.deviceprovider.v1.handshake_pb2 import *
+          from anolis.deviceprovider.v1.health_pb2 import *
+          from anolis.deviceprovider.v1.inventory_pb2 import *
+          from anolis.deviceprovider.v1.readiness_pb2 import *
+          from anolis.deviceprovider.v1.status_pb2 import *
+          from anolis.deviceprovider.v1.telemetry_pb2 import *
+          from anolis.deviceprovider.v1.types_pb2 import *
+          from anolis.deviceprovider.v1.value_pb2 import *
+          EOF
+      - name: Install the wheel (with conformance extra)
+        run: pip install ".[conformance]"
+      - name: Verifier self-tests (hermetic — no external binary)
+        run: anolis-adpp-conformance --self-test -p no:cacheprovider -ra
+      - name: Plugin isolation regression (unrelated pytest must still pass)
+        run: |
+          mkdir -p /tmp/unrelated
+          printf 'def test_unrelated():\n    assert True\n' > /tmp/unrelated/test_unrelated.py
+          python -m pytest /tmp/unrelated -q -p no:cacheprovider
+      - name: Misconfiguration must fail, never report green
+        run: |
+          set +e
+          fail() { echo "EXPECTED NONZERO: $1"; exit 1; }
+          anolis-adpp-conformance -p no:cacheprovider;            [ $? -ne 0 ] || fail "bare invocation (no mode)"
+          anolis-adpp-conformance --provider-bin /x -p no:cacheprovider; [ $? -ne 0 ] || fail "one provider arg"
+          anolis-adpp-conformance --provider-bin /x --provider-config /y -p no:cacheprovider; [ $? -ne 0 ] || fail "two provider args"
+          anolis-adpp-conformance --self-test --provider-bin /x -p no:cacheprovider; [ $? -ne 0 ] || fail "--self-test + provider arg"
+          # A waiver targeting a non-executable-profile test must be rejected at
+          # collection. Use REAL bin+config paths so the only possible failure
+          # reason is the waiver scope — and assert the specific diagnostic.
+          real_bin="$(mktemp)"; printf '#!/bin/sh\nexit 0\n' > "$real_bin"; chmod +x "$real_bin"
+          real_cfg="$(mktemp)"; echo '{}' > "$real_cfg"
+          printf 'provider_name = "p"\n[waivers]\ntest_read_signals_response_shape = "bogus"\n' > /tmp/bad-profile.toml
+          out="$(anolis-adpp-conformance --provider-bin "$real_bin" --provider-config "$real_cfg" --provider-profile /tmp/bad-profile.toml -p no:cacheprovider 2>&1)"
+          [ $? -ne 0 ] || fail "out-of-scope waiver (exit)"
+          echo "$out" | grep -q "waivers may only target executable_profile tests" || fail "out-of-scope waiver fired for the wrong reason:\n$out"
+          echo "OK: every misconfiguration returned nonzero (waiver scope for the right reason)"
+      # NOTE: cross-provider conformance (running the harness against a real
+      # provider binary) lives in each PROVIDER repo's CI — the provider pulls
+      # this pinned wheel + supplies its own --provider-profile. The contract
+      # repo must not depend on a concrete implementer's release, so the only
+      # thing gated here is that the verifier itself is sound (the hermetic
+      # self-tests above against in-repo fake providers).
+
   ok:
     name: ok
     if: always()
-    needs: [lint]
+    needs: [lint, conformance]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

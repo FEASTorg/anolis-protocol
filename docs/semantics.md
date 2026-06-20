@@ -66,6 +66,10 @@ ADPP itself is transport-agnostic. When used over a byte-stream transport
 Rationale: Protobuf does not define framing; length-prefixed framing is a
 well-established pattern.
 
+The Anolis runtime's concrete binding of this agreement — fixed `uint32_le`
+framing, the frame-size limit, Hello metadata, and malformed-stream behavior — is
+specified normatively in `profiles/framed-stdio-v1.md`.
+
 ---
 
 ## 3. Session handshake

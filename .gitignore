@@ -45,3 +45,13 @@ working/
 
 # buf generate output (CI artifacts, not committed)
 gen/
+
+# Python (conformance harness + wheel build)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.eggs/
+dist/
+.venv/
+venv/
