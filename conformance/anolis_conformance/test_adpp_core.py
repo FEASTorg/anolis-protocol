@@ -169,6 +169,65 @@ def test_call_on_unknown_device_rejected(ready_client: AdppClient, codes, status
     )
 
 
+# ---- positive call coverage (L1, spec-backed) --------------------------
+def _first_device_with_functions(ready_client: AdppClient):
+    """(device_id, [FunctionSpec]) for the first device declaring functions; else (None, [])."""
+    for d in ready_client.list_devices().list_devices.devices:
+        caps = ready_client.describe_device(d.device_id).describe_device.capabilities
+        if caps.functions:
+            return d.device_id, list(caps.functions)
+    return None, []
+
+
+def test_call_valid_no_arg_function_accepted(ready_client: AdppClient, codes, status_text) -> None:
+    # A well-formed call to a function with no required args must be ACCEPTED:
+    # CODE_OK, or CODE_UNAVAILABLE if the mock backend cannot actuate. It must not
+    # be rejected as INVALID_ARGUMENT/NOT_FOUND/OUT_OF_RANGE — the function exists
+    # and nothing required is missing. Exercises the positive call path by id+name.
+    dev, fns = _first_device_with_functions(ready_client)
+    if not fns:
+        pytest.skip("no device declares functions")
+    no_req = [f for f in fns if not any(a.required for a in f.args)]
+    if not no_req:
+        pytest.skip("no zero-required-argument function to call safely")
+    fn = no_req[0]
+    accepted = (codes.OK, codes.UNAVAILABLE)
+    by_id = ready_client.call(dev, function_id=fn.function_id)
+    assert by_id.status.code in accepted, f"valid call by function_id must be accepted; got {status_text(by_id)}"
+    by_name = ready_client.call(dev, function_name=fn.name)
+    assert by_name.status.code in accepted, f"valid call by function_name must be accepted; got {status_text(by_name)}"
+
+
+def test_call_missing_required_arg_is_invalid(ready_client: AdppClient, codes, status_text) -> None:
+    # semantics.md 8.3: omitting a required argument is CODE_INVALID_ARGUMENT.
+    dev, fns = _first_device_with_functions(ready_client)
+    if not fns:
+        pytest.skip("no device declares functions")
+    with_req = [f for f in fns if any(a.required for a in f.args)]
+    if not with_req:
+        pytest.skip("no function declares a required argument")
+    fn = with_req[0]
+    resp = ready_client.call(dev, function_id=fn.function_id)  # omit all args
+    assert resp.status.code == codes.INVALID_ARGUMENT, (
+        f"call omitting a required arg must be INVALID_ARGUMENT; got {status_text(resp)}"
+    )
+
+
+def test_call_function_id_preferred_over_name(ready_client: AdppClient, codes, status_text) -> None:
+    # semantics.md 6.2: when function_id is set, function_name is ignored. The
+    # outcome must not change when an (ignored) function_name is added.
+    dev, fns = _first_device_with_functions(ready_client)
+    if not fns:
+        pytest.skip("no device declares functions")
+    fn = fns[0]
+    only_id = ready_client.call(dev, function_id=fn.function_id)
+    with_name = ready_client.call(dev, function_id=fn.function_id, function_name="__ignored_name__")
+    assert only_id.status.code == with_name.status.code, (
+        "function_name must be ignored when function_id is set (6.2); "
+        f"got {status_text(only_id)} vs {status_text(with_name)}"
+    )
+
+
 # ---- health (experimental, opt-in only — deselected from gating) -------
 @pytest.mark.experimental
 def test_get_health_well_formed(ready_client: AdppClient) -> None:
