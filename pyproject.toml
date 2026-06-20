@@ -13,6 +13,16 @@ dependencies = [
     "protobuf>=7.34.1,<8.0.0",
 ]
 
+[project.optional-dependencies]
+# The cross-provider ADPP conformance harness (drives a provider binary).
+conformance = ["pytest>=7"]
+
+[project.scripts]
+anolis-adpp-conformance = "anolis_conformance.cli:main"
+
+[project.entry-points.pytest11]
+anolis-conformance = "anolis_conformance.plugin"
+
 [tool.hatch.version]
 source = "vcs"
 
@@ -20,7 +30,7 @@ source = "vcs"
 artifacts = ["gen/python/**"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["gen/python/anolis"]
+packages = ["gen/python/anolis", "conformance/anolis_conformance"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "gen/python/protocol_pb2.py" = "protocol_pb2.py"

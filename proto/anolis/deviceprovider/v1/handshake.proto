@@ -4,7 +4,8 @@ package anolis.deviceprovider.v1;
 
 // HelloRequest is the first message sent by the client to establish a session.
 message HelloRequest {
-  // The ADPP protocol version the client requires, e.g. "1".
+  // The ADPP protocol version the client requires. The wire value is the
+  // literal string "v1" (the runtime and every provider require/emit "v1").
   string protocol_version = 1;
   // Human-readable name of the connecting client, e.g. "anolis-runtime".
   string client_name = 2;
@@ -14,7 +15,7 @@ message HelloRequest {
 
 // HelloResponse is the provider's reply to HelloRequest.
 message HelloResponse {
-  // The ADPP protocol version the provider is running.
+  // The ADPP protocol version the provider is running (the literal string "v1").
   string protocol_version = 1;
   // Human-readable name of this provider, e.g. "anolis-provider-sim".
   string provider_name = 2;
