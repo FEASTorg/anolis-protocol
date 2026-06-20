@@ -240,6 +240,7 @@ def test_selftest_profile_loader_accepts_valid(tmp_path) -> None:
     f.write_text(
         'provider_name = "anolis-provider-example"\n'
         "has_mock_devices = false\n"
+        "conformance_level = 1\n"
         "[waivers]\n"
         'test_cli_version_flag = "no --version (example/repo#1)"\n'
     )
@@ -247,6 +248,7 @@ def test_selftest_profile_loader_accepts_valid(tmp_path) -> None:
     p = load_profile(f)
     assert p.expected_provider_name == "anolis-provider-example"
     assert p.has_mock_devices is False
+    assert p.conformance_level == 1
     assert p.xfail_reason("test_cli_version_flag") == "no --version (example/repo#1)"
     assert p.xfail_reason("test_unwaived") is None
 
@@ -257,6 +259,7 @@ def test_selftest_profile_loader_defaults(tmp_path) -> None:
     load_profile.cache_clear()
     p = load_profile(f)
     assert p.has_mock_devices is True and p.known_xfails == {}
+    assert p.conformance_level == 1  # default
 
 
 @pytest.mark.parametrize(
@@ -268,6 +271,10 @@ def test_selftest_profile_loader_defaults(tmp_path) -> None:
         'provider_name = "x"\n[waivers]\nt = 5\n',  # non-string waiver reason
         'provider_name = "x"\nnot valid toml\n',  # malformed TOML
         'provider_name = "x"\nhas_mock_device = true\n',  # unknown key (typo)
+        'provider_name = "x"\nconformance_level = 0\n',  # level < 1
+        'provider_name = "x"\nconformance_level = "2"\n',  # non-int level
+        'provider_name = "x"\nconformance_level = true\n',  # bool is not a level
+        'provider_name = "x"\nconformance_level = 2\n',  # above harness-supported max
     ],
 )
 def test_selftest_profile_loader_rejects_invalid(tmp_path, body) -> None:

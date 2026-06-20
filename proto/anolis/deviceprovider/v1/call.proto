@@ -30,6 +30,8 @@ message CallResponse {
   string device_id = 1;
   // Named result values, keyed by ArgSpec.name from FunctionSpec.results.
   map<string, Value> results = 2;
-  // Optional operation ID for async tracking. Not used in v1 synchronous model.
+  // Optional operation ID for async tracking. When a provider accepts a call
+  // asynchronously (semantics.md 8.1/8.4), CODE_OK with this field set means the
+  // call was accepted (not yet complete); empty for synchronous completion.
   string operation_id = 3;
 }

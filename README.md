@@ -129,8 +129,11 @@ buf generate
 ## Versioning
 
 - Repository uses semantic versioning tags: `MAJOR.MINOR.PATCH`.
-- Breaking wire-contract changes require a major bump.
-- `buf breaking` enforces this automatically on every PR.
+- Breaking **wire-contract** changes require a major bump (`buf breaking`
+  enforces this on every PR).
+- **Semantic** tightening (stricter conformance, same wire) ships as an opt-in
+  **conformance level**, not a silent minor — see `docs/versioning.md`
+  (*Conformance Changes*).
 - See `docs/versioning.md`.
 
 ## Future Work
