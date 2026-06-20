@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from .client import AdppClient
-from .profiles import get_profile
+from .profiles import load_profile
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -27,7 +27,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("adpp-conformance")
     group.addoption("--provider-bin", action="store", help="Path to the provider executable.")
     group.addoption("--provider-config", action="store", help="Path to the provider config (mock-mode for CI).")
-    group.addoption("--profile", action="store", help="Provider profile name (sim|ezo|bread).")
+    group.addoption(
+        "--provider-profile",
+        action="store",
+        help="Path to the provider's conformance manifest (TOML: identity + waivers, "
+        "owned by the provider repo).",
+    )
     group.addoption(
         "--provider-extra-arg",
         action="append",
@@ -60,10 +65,10 @@ def status_text(protocol):
 
 @pytest.fixture(scope="session")
 def profile(request: pytest.FixtureRequest):
-    name = request.config.getoption("--profile")
-    if not name:
-        pytest.skip("conformance test requires --profile (sim|ezo|bread)")
-    return get_profile(name)
+    raw = request.config.getoption("--provider-profile")
+    if not raw:
+        pytest.skip("conformance test requires --provider-profile (a provider-owned manifest)")
+    return load_profile(Path(raw))
 
 
 @pytest.fixture(scope="session")
@@ -116,11 +121,12 @@ def ready_client(client, codes, status_text):
 
 @pytest.fixture(autouse=True)
 def _apply_known_xfails(request: pytest.FixtureRequest) -> None:
-    """Apply a provider's tracked profile gaps as xfails. No-ops without --profile
-    (so the verifier self-tests and unrelated suites are unaffected)."""
-    name = request.config.getoption("--profile", default=None)
-    if not name:
+    """Apply a provider's tracked profile gaps as xfails. No-ops without
+    --provider-profile (so the verifier self-tests and unrelated suites are
+    unaffected)."""
+    raw = request.config.getoption("--provider-profile", default=None)
+    if not raw:
         return
-    reason = get_profile(name).xfail_reason(request.node.name.split("[")[0])
+    reason = load_profile(Path(raw)).xfail_reason(request.node.name.split("[")[0])
     if reason:
         request.node.add_marker(pytest.mark.xfail(reason=reason, strict=False, run=True))

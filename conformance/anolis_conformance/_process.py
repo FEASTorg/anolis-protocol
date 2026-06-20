@@ -1,4 +1,4 @@
-"""Process lifecycle + output capture helpers (promoted from the sim harness)."""
+"""Process lifecycle + output capture helpers."""
 
 from __future__ import annotations
 

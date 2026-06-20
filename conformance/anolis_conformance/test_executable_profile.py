@@ -3,7 +3,8 @@ expects of a provider binary, distinct from ADPP wire conformance: the CLI
 surface, the WaitReady diagnostics the runtime reads, and process lifecycle.
 
 These are NOT ADPP protocol requirements. A binary can be ADPP-conformant and
-still diverge here; such gaps are tracked per-provider as xfails (see profiles.py).
+still diverge here; such gaps are declared as xfails in the provider's own
+`--provider-profile` manifest (see profiles.py for the schema).
 """
 
 from __future__ import annotations

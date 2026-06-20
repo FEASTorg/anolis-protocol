@@ -20,6 +20,7 @@ from .client import (
     ProviderClosed,
     ProviderHang,
 )
+from .profiles import load_profile
 
 # A single fake provider; FAKE_MODE selects the misbehavior. It reads one request
 # frame, then acts. Response-building modes import the installed protobufs. The
@@ -171,3 +172,48 @@ def test_selftest_missing_status_detected(make_client) -> None:
         assert not resp.HasField("status"), "self-test expects the fake to omit status"
     finally:
         client.close()
+
+
+# --- provider-profile loader (the generic schema; ships no implementer data) ---
+
+
+def test_selftest_profile_loader_accepts_valid(tmp_path) -> None:
+    f = tmp_path / "conformance.toml"
+    f.write_text(
+        'provider_name = "anolis-provider-example"\n'
+        "has_mock_devices = false\n"
+        "[waivers]\n"
+        'test_cli_version_flag = "no --version (example/repo#1)"\n'
+    )
+    load_profile.cache_clear()
+    p = load_profile(f)
+    assert p.expected_provider_name == "anolis-provider-example"
+    assert p.has_mock_devices is False
+    assert p.xfail_reason("test_cli_version_flag") == "no --version (example/repo#1)"
+    assert p.xfail_reason("test_unwaived") is None
+
+
+def test_selftest_profile_loader_defaults(tmp_path) -> None:
+    f = tmp_path / "minimal.toml"
+    f.write_text('provider_name = "x"\n')
+    load_profile.cache_clear()
+    p = load_profile(f)
+    assert p.has_mock_devices is True and p.known_xfails == {}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'has_mock_devices = true\n',  # missing provider_name
+        "provider_name = 42\n",  # non-string provider_name
+        'provider_name = "x"\nhas_mock_devices = "yes"\n',  # non-bool flag
+        'provider_name = "x"\n[waivers]\nt = 5\n',  # non-string waiver reason
+        'provider_name = "x"\nnot valid toml\n',  # malformed TOML
+    ],
+)
+def test_selftest_profile_loader_rejects_invalid(tmp_path, body) -> None:
+    f = tmp_path / "bad.toml"
+    f.write_text(body)
+    load_profile.cache_clear()
+    with pytest.raises(SystemExit):
+        load_profile(f)

@@ -15,7 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # The cross-provider ADPP conformance harness (drives a provider binary).
-conformance = ["pytest>=7"]
+conformance = ["pytest>=7", "tomli>=2; python_version < '3.11'"]
 
 [project.scripts]
 anolis-adpp-conformance = "anolis_conformance.cli:main"

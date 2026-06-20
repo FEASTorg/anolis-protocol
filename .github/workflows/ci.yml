@@ -23,7 +23,7 @@ jobs:
           breaking_against: "https://github.com/anolishq/anolis-protocol.git#branch=main"
 
   conformance:
-    name: conformance (sim)
+    name: conformance (verifier self-tests)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -66,32 +66,12 @@ jobs:
           mkdir -p /tmp/unrelated
           printf 'def test_unrelated():\n    assert True\n' > /tmp/unrelated/test_unrelated.py
           python -m pytest /tmp/unrelated -q -p no:cacheprovider
-      - name: Fetch the PINNED provider-sim release (deterministic canary)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Pinned tag (bump deliberately) so a new sim release can't silently
-          # change this required CI result.
-          gh release download v0.2.4 -R anolishq/anolis-provider-sim --pattern '*linux-x86_64.tar.gz' -D sim
-          tar -xzf sim/*linux-x86_64.tar.gz -C sim
-          echo "SIM_BIN=$(find "$PWD/sim" -type f -name anolis-provider-sim | head -1)" >> "$GITHUB_ENV"
-      - name: Write a minimal sim config
-        run: |
-          cat > sim-conformance.yaml <<'EOF'
-          devices:
-            - id: tempctl0
-              type: tempctl
-              initial_temp: 20.0
-          simulation:
-            mode: inert
-          EOF
-      - name: Conformance canary against the pinned sim binary
-        run: |
-          chmod +x "$SIM_BIN"
-          anolis-adpp-conformance \
-            --provider-bin "$SIM_BIN" \
-            --provider-config sim-conformance.yaml \
-            --profile sim -p no:cacheprovider -ra
+      # NOTE: cross-provider conformance (running the harness against a real
+      # provider binary) lives in each PROVIDER repo's CI — the provider pulls
+      # this pinned wheel + supplies its own --provider-profile. The contract
+      # repo must not depend on a concrete implementer's release, so the only
+      # thing gated here is that the verifier itself is sound (the hermetic
+      # self-tests above against in-repo fake providers).
 
   ok:
     name: ok

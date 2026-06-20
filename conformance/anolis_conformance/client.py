@@ -1,7 +1,6 @@
 """Synchronous ADPP client over stdio + uint32-LE framing.
 
 Provider-agnostic: give it the generated protocol module, a binary, and a config.
-Promoted and generalized from the provider-sim test harness.
 """
 
 from __future__ import annotations

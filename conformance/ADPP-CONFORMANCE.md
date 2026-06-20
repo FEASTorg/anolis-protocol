@@ -10,9 +10,11 @@ cross-provider convergence work and the future provider-SDK's acceptance test
 > accepts every permitted behavior. If a check here ever conflicts with
 > `semantics.md`, `semantics.md` wins and the check is the bug.
 
-**Status:** *foundation.* This PR delivers the harness + verifier self-tests +
-an in-repo canary. Per-provider CI lanes, the full assertion set, the version
-alignment, and strict provider-owned waivers are tracked follow-ups under #25 —
+**Status:** *foundation.* This PR delivers the generic harness + hermetic
+verifier self-tests. It ships **no implementer-specific data** — providers pull
+this pinned artifact and supply their own `--provider-profile`. Per-provider CI
+lanes (in each provider repo), the full assertion set, the version alignment, and
+an org-level cross-version compatibility matrix are tracked follow-ups under #25 —
 do not read this as "all of #25 is done".
 
 **Platform:** Linux/POSIX only for now (the client uses `select` on pipes).
@@ -25,8 +27,12 @@ pip install anolis-protocol[conformance]
 anolis-adpp-conformance \
   --provider-bin ./build/.../anolis-provider-X \
   --provider-config config/conformance.yaml \   # mock mode for CI (no real i2c)
-  --profile X                                    # sim | ezo | bread
+  --provider-profile conformance.toml           # provider-owned: identity + waivers
 ```
+
+`--provider-profile` points at a manifest **owned by the provider repo** — the
+harness ships no knowledge of any specific provider. See *Waiver policy* below
+for its format.
 
 The console script loads the plugin explicitly and defaults to the gating set
 (`-m "not experimental"`). The plugin is **not** a global `pytest11` entry point,
@@ -71,25 +77,31 @@ hermetic (no external binary) and are what make the verifier trustworthy.
 
 ## Waiver (`xfail`) policy
 
-A provider's tracked gaps live in its `ProviderProfile` and apply as non-strict
-`xfail`s (green-as-baseline; an xPASS means the gap was fixed — remove the entry).
-Waivers cover **only executable-profile** gaps, never behavior `semantics.md`
-permits. Current baseline:
+A provider's identity and tracked gaps live in a **provider-owned manifest** —
+this repo ships only the schema + loader, never a provider's data. Pass it with
+`--provider-profile conformance.toml`:
 
-| Provider | Waiver (executable profile) |
-| --- | --- |
-| sim | no `--version` |
-| bread | `wait_ready` omits `init_time_ms` |
-| ezo | none |
+```toml
+provider_name = "anolis-provider-<name>"    # required; asserted against Hello
+has_mock_devices = true                     # optional, default true
 
-Follow-up (#25): make waivers strict + provider-owned (an issue URL/owner/expiry
-per waiver, living in each provider repo), so the protocol package doesn't
-re-release for every provider exception.
+[waivers]                                   # test base-name -> reason (issue link)
+test_cli_version_flag = "no --version (<owner>/<repo>#<issue-number>)"
+```
+
+Waivers apply as non-strict `xfail`s (green-as-baseline; an xPASS means the gap
+was fixed — remove the entry) and cover **only executable-profile** gaps, never
+behavior `semantics.md` permits. Because the manifest lives in the provider repo,
+the protocol package never re-releases for a provider-specific exception. Each
+waiver reason should carry an issue link (and ideally an owner/expiry).
 
 ## Not yet covered (follow-ups, #25)
 
 Positive calls (by id and name) with valid args; argument type/bound validation;
 deadline behavior; typed-value/quality/timestamp assertions; full readiness
-diagnostics; pre-Hello handling; capability id/name-convention checks; and the
-per-provider CI/CTest `provider.conformance` lanes (sim/ezo/bread), plus an ezo
-`mock://` conformance config and the sim Python wheel version-pin alignment.
+diagnostics; pre-Hello handling; and capability id/name-convention checks.
+Provider-side concerns — each provider's `provider.conformance` CI lane (pulling
+this pinned wheel), its `conformance.toml`/mock config, and version-pin alignment
+— are tracked in the respective provider repos, plus an org-level cross-version
+compatibility matrix. (ADPP is currently implemented by `anolis-provider-sim`,
+`-ezo`, and `-bread`.)
