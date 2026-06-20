@@ -37,6 +37,11 @@ def pytest_configure(config: pytest.Config) -> None:
         "executable_profile: Anolis executable-profile convention (the only tests a "
         "provider waiver may xfail).",
     )
+    config.addinivalue_line(
+        "markers",
+        "conformance_level(n): runs only when the provider's declared conformance_level "
+        ">= n. Untagged tests are level 1.",
+    )
 
     self_test = config.getoption("--self-test")
     present = [opt for opt in _PROVIDER_OPTS if config.getoption(opt)]
@@ -126,6 +131,21 @@ def pytest_collection_modifyitems(
             f"{sorted(unknown)}; waivers may only target executable_profile tests "
             f"({sorted(waivable)}). Waivers must never mask core/transport/verifier failures."
         )
+
+    # Conformance-level gating: a test marked conformance_level(n) runs only when
+    # the provider declares level >= n. Untagged tests are level 1. This is what
+    # makes a declared level actually run its extra requirements (not the
+    # experimental marker).
+    above_level = []
+    for item in items:
+        marker = item.get_closest_marker("conformance_level")
+        required = marker.args[0] if marker and marker.args else 1
+        if required > profile.conformance_level:
+            above_level.append(item)
+    if above_level:
+        config.hook.pytest_deselected(items=above_level)
+        skip = set(above_level)
+        items[:] = [i for i in items if i not in skip]
 
 
 @pytest.fixture(scope="session")

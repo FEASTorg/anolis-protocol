@@ -23,6 +23,26 @@ def assert_status_present(response) -> None:
         raise ConformanceFailure("response is missing the required Status (semantics.md §10)")
 
 
+# QUALITY_UNSPECIFIED is 0 in the proto enum (proto3 default).
+_QUALITY_UNSPECIFIED = 0
+
+
+def assert_signalvalues_l2(read_response) -> None:
+    """semantics.md §7.1 [L2]: in a CODE_OK ReadSignalsResponse every SignalValue
+    MUST set ``timestamp`` (present) and a ``quality`` other than
+    ``QUALITY_UNSPECIFIED``. Caller checks the status is OK first."""
+    for value in read_response.read_signals.values:
+        if not value.HasField("timestamp"):
+            raise ConformanceFailure(
+                f"signal {value.signal_id!r}: [L2] requires a timestamp on OK values"
+            )
+        if value.quality == _QUALITY_UNSPECIFIED:
+            raise ConformanceFailure(
+                f"signal {value.signal_id!r}: [L2] requires a defined quality "
+                f"(not QUALITY_UNSPECIFIED)"
+            )
+
+
 def _defined_error_codes(codes: SimpleNamespace) -> set[int]:
     """Every status code the proto enum defines, minus OK and UNSPECIFIED."""
     return set(vars(codes).values()) - {codes.OK, codes.UNSPECIFIED}

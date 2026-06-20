@@ -13,7 +13,12 @@ import time
 
 import pytest
 
-from .checks import ConformanceFailure, assert_controlled_malformed, assert_status_present
+from .checks import (
+    ConformanceFailure,
+    assert_controlled_malformed,
+    assert_signalvalues_l2,
+    assert_status_present,
+)
 from .client import (
     AdppClient,
     CorrelationError,
@@ -232,6 +237,23 @@ def test_selftest_malformed_validator_accepts_error_status(make_client, codes) -
         client.close()
 
 
+# --- L2 SignalValue check (the real §7.1 validator the L2 suite runs) ---
+
+
+def test_selftest_signalvalues_l2_validator(protocol) -> None:
+    resp = protocol.Response()
+    sv = resp.read_signals.values.add()
+    sv.signal_id = "temp"
+    # missing timestamp + UNSPECIFIED quality -> rejected
+    with pytest.raises(ConformanceFailure):
+        assert_signalvalues_l2(resp)
+    sv.timestamp.seconds = 1  # present now, but quality still UNSPECIFIED
+    with pytest.raises(ConformanceFailure):
+        assert_signalvalues_l2(resp)
+    sv.quality = protocol.SignalValue.QUALITY_OK  # timestamp + defined quality -> accepted
+    assert_signalvalues_l2(resp)
+
+
 # --- provider-profile loader (the generic schema; ships no implementer data) ---
 
 
@@ -240,7 +262,7 @@ def test_selftest_profile_loader_accepts_valid(tmp_path) -> None:
     f.write_text(
         'provider_name = "anolis-provider-example"\n'
         "has_mock_devices = false\n"
-        "conformance_level = 1\n"
+        "conformance_level = 2\n"
         "[waivers]\n"
         'test_cli_version_flag = "no --version (example/repo#1)"\n'
     )
@@ -248,7 +270,7 @@ def test_selftest_profile_loader_accepts_valid(tmp_path) -> None:
     p = load_profile(f)
     assert p.expected_provider_name == "anolis-provider-example"
     assert p.has_mock_devices is False
-    assert p.conformance_level == 1
+    assert p.conformance_level == 2
     assert p.xfail_reason("test_cli_version_flag") == "no --version (example/repo#1)"
     assert p.xfail_reason("test_unwaived") is None
 
@@ -274,7 +296,7 @@ def test_selftest_profile_loader_defaults(tmp_path) -> None:
         'provider_name = "x"\nconformance_level = 0\n',  # level < 1
         'provider_name = "x"\nconformance_level = "2"\n',  # non-int level
         'provider_name = "x"\nconformance_level = true\n',  # bool is not a level
-        'provider_name = "x"\nconformance_level = 2\n',  # above harness-supported max
+        'provider_name = "x"\nconformance_level = 3\n',  # above harness-supported max
     ],
 )
 def test_selftest_profile_loader_rejects_invalid(tmp_path, body) -> None:
