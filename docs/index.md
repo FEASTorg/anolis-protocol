@@ -70,7 +70,7 @@ These concerns are handled by Anolis or deployment-specific infrastructure.
 - Breaking **wire** changes require a new major version directory (`v2`, `v3`, …).
 - **Semantic** tightening is introduced as an opt-in **conformance level** within
   the current major version, not a new directory — see `semantics.md`
-  (*Conformance levels*) and `versioning.md`.
+  (_Conformance levels_) and `versioning.md`.
 
 Backward-compatible extensions (new fields, new optional messages) are
 allowed within v1.
