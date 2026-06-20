@@ -3,6 +3,14 @@
 This document defines the **normative semantics** of the
 **Anolis Device Provider Protocol (ADPP)** v1.
 
+> **Conformance levels.** Requirements tagged **[L2]** belong to *conformance
+> level 2* — a strengthened bar introduced after the initial release. Everything
+> untagged is *level 1* (the original bar). The wire contract is unchanged
+> between levels; L2 only tightens behavior. Because tightening conformance can
+> make a previously-conformant provider non-conformant, L2 is rolled out as a
+> staged transition (its conformance tests ship non-gating first, then graduate
+> to gating) — see `versioning.md`.
+
 ---
 
 ## 1. Roles and responsibilities
@@ -84,6 +92,13 @@ specified normatively in `profiles/framed-stdio-v1.md`.
   - `CODE_FAILED_PRECONDITION`, or
   - `CODE_UNIMPLEMENTED`.
 
+### 3.2 Requests before Hello
+
+- **[L2]** A provider that receives any request other than `HelloRequest`
+  before a successful Hello exchange MUST reject it with
+  `CODE_FAILED_PRECONDITION` and MUST NOT process it. (The client SHOULD send
+  Hello first per §3.1; this defines the provider's behavior if it does not.)
+
 ---
 
 ## 4. Request / response correlation
@@ -154,8 +169,10 @@ In v1:
 ### 7.1 ReadSignals behavior
 
 - Providers MAY return cached values, live values, or a combination.
-- Providers SHOULD set `SignalValue.timestamp` to the time the measurement was
-  observed at the source.
+- **[L2]** Every `SignalValue` returned in a response — including the
+  partial-success reads of §7.4 — MUST set `timestamp` to the time the
+  measurement was observed at the source, and MUST set `quality` to a defined
+  value other than `QUALITY_UNSPECIFIED`. *(Level 1: these were SHOULD.)*
 - If a value exceeds `SignalSpec.stale_after_ms`, providers SHOULD report
   `QUALITY_STALE`.
 
@@ -224,6 +241,33 @@ Invalid inputs MUST result in:
 
 - `CODE_INVALID_ARGUMENT`, or
 - `CODE_NOT_FOUND` for unknown identifiers.
+
+Bounds and value validity:
+
+- Declared numeric bounds (`ArgSpec.min_*` / `ArgSpec.max_*`) are **inclusive**:
+  a value equal to a bound is valid.
+- **[L2]** A numeric argument outside its declared inclusive bounds MUST result
+  in `CODE_OUT_OF_RANGE` (distinct from `CODE_INVALID_ARGUMENT`).
+- **[L2]** A non-finite floating-point argument (`NaN`, `+Inf`, `-Inf`) where a
+  finite value is expected is malformed, not out-of-range, and MUST result in
+  `CODE_INVALID_ARGUMENT`.
+
+So: unknown identifiers → `CODE_NOT_FOUND`; values outside declared bounds →
+`CODE_OUT_OF_RANGE`; non-finite / wrong-type / missing-required values →
+`CODE_INVALID_ARGUMENT`.
+
+### 8.4 Deadlines
+
+- `CallRequest.deadline` is an optional absolute deadline.
+- A provider advertises whether it honors deadlines via the Hello metadata key
+  `supports_deadlines` (`"true"` / `"false"`; **absent ⇒ `"false"`**).
+- **[L2]** A provider advertising `supports_deadlines="true"` that cannot
+  complete a call before its `deadline` MUST abort and return
+  `CODE_DEADLINE_EXCEEDED`.
+- **[L2]** Regardless of deadline support, a provider MUST NOT report `CODE_OK`
+  for work it did not actually complete.
+- A provider that does not advertise deadline support MAY ignore `deadline`
+  (best-effort).
 
 ---
 
