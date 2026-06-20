@@ -13,6 +13,7 @@ import time
 
 import pytest
 
+from .checks import ConformanceFailure, assert_controlled_malformed
 from .client import (
     AdppClient,
     CorrelationError,
@@ -51,6 +52,22 @@ elif mode == "drip":
         out.write(b"x"); out.flush(); time.sleep(0.5)
 elif mode == "mid_frame":
     out.write(struct.pack("<I", 100)); out.write(b"abc"); out.flush(); sys.exit(0)
+elif mode in ("respond_ok", "respond_unspecified", "respond_error", "respond_then_crash"):
+    # Reply to a (malformed) frame without parsing it, to test the malformed-input
+    # validator: success/unspecified statuses and respond-then-crash must be rejected.
+    import protocol_pb2 as p
+    resp = p.Response(); resp.request_id = 1
+    if mode == "respond_ok":
+        resp.status.code = p.Status.Code.Value("CODE_OK")
+    elif mode == "respond_unspecified":
+        resp.status.message = "unspecified"          # marks status present; code stays 0
+    else:
+        resp.status.code = p.Status.Code.Value("CODE_NOT_FOUND"); resp.status.message = "nope"
+    data = resp.SerializeToString()
+    out.write(struct.pack("<I", len(data)) + data); out.flush()
+    if mode == "respond_then_crash":
+        os.abort()
+    time.sleep(60)
 else:
     import protocol_pb2 as p
     req = p.Request(); req.ParseFromString(body)
@@ -174,6 +191,33 @@ def test_selftest_missing_status_detected(make_client) -> None:
         client.close()
 
 
+# --- malformed-input validator (the REAL check the framed-stdio suite runs) ---
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ["respond_ok", "respond_unspecified", "respond_then_crash", "crash_signal", "exit_bad"],
+)
+def test_selftest_malformed_validator_rejects(make_client, codes, mode) -> None:
+    client = make_client(mode)
+    try:
+        client.send_frame(b"\xde\xad not a valid request \x00\x01")
+        with pytest.raises(ConformanceFailure):
+            assert_controlled_malformed(client, codes, timeout=3.0)
+    finally:
+        client.close()
+
+
+def test_selftest_malformed_validator_accepts_error_status(make_client, codes) -> None:
+    # The conformant shape: a framed ERROR response, process stays alive.
+    client = make_client("respond_error")
+    try:
+        client.send_frame(b"\xde\xad not a valid request \x00\x01")
+        assert_controlled_malformed(client, codes, timeout=3.0)  # must NOT raise
+    finally:
+        client.close()
+
+
 # --- provider-profile loader (the generic schema; ships no implementer data) ---
 
 
@@ -209,6 +253,7 @@ def test_selftest_profile_loader_defaults(tmp_path) -> None:
         'provider_name = "x"\nhas_mock_devices = "yes"\n',  # non-bool flag
         'provider_name = "x"\n[waivers]\nt = 5\n',  # non-string waiver reason
         'provider_name = "x"\nnot valid toml\n',  # malformed TOML
+        'provider_name = "x"\nhas_mock_device = true\n',  # unknown key (typo)
     ],
 )
 def test_selftest_profile_loader_rejects_invalid(tmp_path, body) -> None:

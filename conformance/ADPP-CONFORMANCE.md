@@ -34,6 +34,14 @@ anolis-adpp-conformance \
 harness ships no knowledge of any specific provider. See *Waiver policy* below
 for its format.
 
+There are two explicit modes, and **a misconfigured run never reports green**:
+
+- **provider mode** — all three `--provider-*` args are required; a partial set
+  or a bare invocation is a usage error (nonzero exit), so a broken provider-CI
+  command can't masquerade as conformant.
+- **self-test mode** — `anolis-adpp-conformance --self-test` runs only the
+  hermetic verifier self-tests (no provider args allowed).
+
 The console script loads the plugin explicitly and defaults to the gating set
 (`-m "not experimental"`). The plugin is **not** a global `pytest11` entry point,
 so installing the wheel never affects unrelated pytest runs.
@@ -71,9 +79,21 @@ is a runtime profile, **not** an ADPP restriction — the harness does not requi
 ## Verifier self-tests
 
 `test_selftest.py` drives the harness against deliberately-faulty fake providers
-(hang, signal-crash, over-cap response, byte-drip, mid-frame close, wrong
-`request_id`, missing status) and asserts the harness **rejects** each. These are
-hermetic (no external binary) and are what make the verifier trustworthy.
+and asserts the harness **rejects** each. These are hermetic (no external binary)
+and are what make the verifier trustworthy. They cover:
+
+- **transport faults** — hang, signal-crash, over-cap response, byte-drip,
+  mid-frame close, wrong `request_id`, missing status;
+- **the real malformed-input validator** (`checks.assert_controlled_malformed`,
+  the same code the framed-stdio suite runs) against a provider that answers
+  garbage with `CODE_OK`, with `CODE_UNSPECIFIED`, or with a response-then-crash
+  — each must be rejected, while a framed *error* response is accepted;
+- **the profile loader** — valid manifests, defaults, and every rejection path
+  (missing/invalid fields, unknown keys, malformed TOML).
+
+The CI also asserts at the command level that a misconfigured invocation (no
+mode, partial provider args, or a waiver targeting a non-executable-profile test)
+exits **nonzero** — the verifier must never report green having tested nothing.
 
 ## Waiver (`xfail`) policy
 
@@ -89,11 +109,15 @@ has_mock_devices = true                     # optional, default true
 test_cli_version_flag = "no --version (<owner>/<repo>#<issue-number>)"
 ```
 
-Waivers apply as non-strict `xfail`s (green-as-baseline; an xPASS means the gap
-was fixed — remove the entry) and cover **only executable-profile** gaps, never
-behavior `semantics.md` permits. Because the manifest lives in the provider repo,
-the protocol package never re-releases for a provider-specific exception. Each
-waiver reason should carry an issue link (and ideally an owner/expiry).
+Waivers apply as **strict** `xfail`s and may target **only executable-profile**
+tests (those carry the `executable_profile` marker). A waiver key naming any
+other test — a core, framed-stdio, or verifier test — is rejected at collection,
+so a waiver can never mask a real protocol/transport failure. Strict means a
+fixed divergence fails as `XPASS` until its waiver is removed, rather than
+silently preserving stale conformance debt. Because the manifest lives in the
+provider repo, the protocol package never re-releases for a provider-specific
+exception. Each waiver reason should carry an issue link (and ideally an
+owner/expiry).
 
 ## Not yet covered (follow-ups, #25)
 

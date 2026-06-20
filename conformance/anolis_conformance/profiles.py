@@ -58,6 +58,13 @@ def load_profile(path: Path) -> ProviderProfile:
     except tomllib.TOMLDecodeError as exc:
         raise SystemExit(f"--provider-profile {path}: invalid TOML ({exc})") from None
 
+    unknown_keys = set(data) - {"provider_name", "has_mock_devices", "waivers"}
+    if unknown_keys:
+        raise SystemExit(
+            f"--provider-profile {path}: unknown key(s) {sorted(unknown_keys)} "
+            f"(allowed: provider_name, has_mock_devices, waivers). Check for a typo."
+        )
+
     provider_name = data.get("provider_name")
     if not isinstance(provider_name, str) or not provider_name:
         raise SystemExit(

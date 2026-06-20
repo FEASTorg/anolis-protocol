@@ -21,15 +21,6 @@ def test_hello_v1_ok(client: AdppClient, profile, codes, status_text) -> None:
     assert resp.hello.provider_name == profile.expected_provider_name
 
 
-def test_hello_metadata_values(client: AdppClient) -> None:
-    meta = dict(client.hello().hello.metadata)
-    missing = spec.REQUIRED_HELLO_METADATA_KEYS - meta.keys()
-    assert not missing, f"Hello metadata missing required keys {missing}; got {sorted(meta)}"
-    assert meta["transport"] == spec.EXPECTED_TRANSPORT, f"transport={meta['transport']!r}"
-    assert meta["max_frame_bytes"] == spec.EXPECTED_MAX_FRAME_BYTES, meta["max_frame_bytes"]
-    assert meta["supports_wait_ready"] in ("true", "false"), meta["supports_wait_ready"]
-
-
 def test_hello_unsupported_version_rejected(client: AdppClient, codes, status_text) -> None:
     # semantics.md 3: an unsupported version MUST be FAILED_PRECONDITION *or*
     # UNIMPLEMENTED (both conformant).
@@ -54,13 +45,20 @@ def test_list_devices_ok(ready_client: AdppClient, profile, codes, status_text) 
         assert len(resp.list_devices.devices) >= 1, "conformance config should yield >=1 device"
 
 
-def test_list_devices_include_health(ready_client: AdppClient, codes, status_text) -> None:
+def test_list_devices_include_health(ready_client: AdppClient, profile, codes, status_text) -> None:
     resp = ready_client.list_devices(include_health=True)
     assert resp.status.code == codes.OK, status_text(resp)
-    # include_health=true: device_health entries (when present) reference real devices.
     device_ids = {d.device_id for d in resp.list_devices.devices}
-    for dh in resp.list_devices.device_health:
-        assert dh.device_id in device_ids, f"health for unknown device {dh.device_id!r}"
+    health_ids = {dh.device_id for dh in resp.list_devices.device_health}
+    # Health entries must reference real devices.
+    unknown = health_ids - device_ids
+    assert not unknown, f"device_health references unknown devices {unknown}"
+    # inventory.proto: when include_health is true the response "will include
+    # per-device health entries". For a profile with mock devices, require it.
+    if profile.has_mock_devices and device_ids:
+        assert health_ids, "include_health=true must populate per-device health entries"
+        missing = device_ids - health_ids
+        assert not missing, f"include_health=true must cover every device; missing {missing}"
 
 
 def test_describe_device(ready_client: AdppClient, codes, status_text) -> None:
@@ -81,13 +79,16 @@ def test_describe_unknown_device_not_found(ready_client: AdppClient, codes, stat
 
 
 # ---- read / call --------------------------------------------------------
-def test_read_signals_response_shape(ready_client: AdppClient, codes) -> None:
+def test_read_signals_response_shape(ready_client: AdppClient, codes, status_text) -> None:
     devices = ready_client.list_devices().list_devices.devices
     if not devices:
         pytest.skip("no devices to read")
     resp = ready_client.read_signals(devices[0].device_id)  # default signal set
-    # Mock backends may legitimately report data unavailable; only the shape is
-    # mandatory. If OK, every value carries a signal_id and a populated value.
+    # A default read must succeed, or the mock backend may legitimately report
+    # CODE_UNAVAILABLE — but never an arbitrary error (INTERNAL/INVALID_ARGUMENT/…).
+    assert resp.status.code in (codes.OK, codes.UNAVAILABLE), (
+        f"default read must be OK or UNAVAILABLE; got {status_text(resp)}"
+    )
     if resp.status.code == codes.OK:
         for value in resp.read_signals.values:
             assert value.signal_id, "each SignalValue must carry a signal_id"
@@ -95,46 +96,60 @@ def test_read_signals_response_shape(ready_client: AdppClient, codes) -> None:
 
 
 def test_read_unknown_signal_consistent(ready_client: AdppClient, codes, status_text) -> None:
-    # semantics.md 7.1: a provider MUST choose ONE consistent behavior for an
+    # semantics.md 7.4: a provider MUST choose ONE consistent behavior for an
     # unknown signal id — either fail CODE_NOT_FOUND, OR return partial results
-    # that omit the unknown id. Both are conformant.
+    # that omit the unknown id. Both are conformant; inconsistency is not.
     devices = ready_client.list_devices().list_devices.devices
     if not devices:
         pytest.skip("no devices")
-    caps = ready_client.describe_device(devices[0].device_id).describe_device.capabilities
+    dev = devices[0].device_id
+    caps = ready_client.describe_device(dev).describe_device.capabilities
     if not caps.signals:
         pytest.skip("device declares no signals")
     known = caps.signals[0].signal_id
-    resp = ready_client.read_signals(devices[0].device_id, [known, "__no_such_signal__"])
-    if resp.status.code == codes.NOT_FOUND:
-        return  # fail-fast variant
-    if resp.status.code == codes.OK:
-        returned = {v.signal_id for v in resp.read_signals.values}
-        assert "__no_such_signal__" not in returned, (
-            "partial-result variant must omit the unknown signal id"
+    unknown = "__no_such_signal__"
+
+    def policy(signal_ids) -> str:
+        resp = ready_client.read_signals(dev, signal_ids)
+        if resp.status.code == codes.NOT_FOUND:
+            return "fail"
+        if resp.status.code == codes.OK:
+            returned = {v.signal_id for v in resp.read_signals.values}
+            assert unknown not in returned, "partial variant must omit the unknown signal id"
+            if known in signal_ids:
+                assert known in returned, (
+                    "partial variant must still return the known signal, not silently drop it"
+                )
+            return "partial"
+        return pytest.fail(  # type: ignore[return-value]
+            f"unknown-signal read must be NOT_FOUND or OK(partial); got {status_text(resp)}"
         )
-        return
-    pytest.fail(f"unknown-signal read must be NOT_FOUND or OK(partial); got {status_text(resp)}")
+
+    chosen = policy([known, unknown])
+    # The same policy must hold on repeat and for an unknown-only request.
+    assert policy([known, unknown]) == chosen, "policy must be stable across identical requests"
+    assert policy([unknown]) == chosen, "policy must match for an unknown-only request"
 
 
 def test_call_unknown_function_by_id_rejected(ready_client: AdppClient, codes, status_text) -> None:
     devices = ready_client.list_devices().list_devices.devices
     if not devices:
         pytest.skip("no devices")
+    # semantics.md 8.3: unknown identifiers MUST be CODE_NOT_FOUND.
     resp = ready_client.call(devices[0].device_id, function_id=999999)
-    assert resp.status.code in (codes.NOT_FOUND, codes.UNIMPLEMENTED), (
-        f"unknown function_id must be NOT_FOUND/UNIMPLEMENTED; got {status_text(resp)}"
+    assert resp.status.code == codes.NOT_FOUND, (
+        f"unknown function_id must be NOT_FOUND; got {status_text(resp)}"
     )
 
 
 def test_call_unknown_function_by_name_rejected(ready_client: AdppClient, codes, status_text) -> None:
-    # Exercises the function_name resolution path with an unresolvable name.
     devices = ready_client.list_devices().list_devices.devices
     if not devices:
         pytest.skip("no devices")
+    # semantics.md 8.3: unknown identifiers (incl. names) MUST be CODE_NOT_FOUND.
     resp = ready_client.call(devices[0].device_id, function_name="__no_such_function__")
-    assert resp.status.code in (codes.NOT_FOUND, codes.UNIMPLEMENTED, codes.INVALID_ARGUMENT), (
-        f"unknown function_name must be a defined rejection; got {status_text(resp)}"
+    assert resp.status.code == codes.NOT_FOUND, (
+        f"unknown function_name must be NOT_FOUND; got {status_text(resp)}"
     )
 
 

@@ -174,6 +174,19 @@ class AdppClient:
             terminate_process(self.process, timeout=timeout)
         return self.process.poll()
 
+    def settle_exit(self, settle: float) -> int | None:
+        """Wait up to ``settle`` seconds for the process to exit on its own.
+
+        Returns its exit code if it terminated, or None if it is still running.
+        Used to catch respond-then-crash: a provider that emits a response and
+        then dies (e.g. by signal) must not be reported as conformant.
+        """
+        try:
+            self.process.wait(timeout=settle)
+        except subprocess.TimeoutExpired:
+            return None
+        return self.process.poll()
+
     def send_request(self, request: Any, timeout: float = 5.0) -> Any:
         if not self.is_running():
             raise ProviderClosed(

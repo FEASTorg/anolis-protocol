@@ -9,12 +9,17 @@ still diverge here; such gaps are declared as xfails in the provider's own
 
 from __future__ import annotations
 
+import re
 import subprocess
 
 import pytest
 
 from . import spec
 from .client import AdppClient
+
+# Every test here is an Anolis executable-profile convention — the only tests a
+# provider's --provider-profile waiver is permitted to xfail.
+pytestmark = pytest.mark.executable_profile
 
 
 # ---- readiness diagnostics ---------------------------------------------
@@ -48,7 +53,11 @@ def test_multiple_roundtrips_stay_framed(ready_client: AdppClient, codes) -> Non
 def test_cli_version_flag(provider_bin) -> None:
     proc = subprocess.run([str(provider_bin), "--version"], capture_output=True, text=True, timeout=10)
     assert proc.returncode == 0, f"`--version` must exit 0; got {proc.returncode} ({proc.stderr[:200]})"
-    assert any(ch.isdigit() for ch in proc.stdout), f"`--version` should print a version; got {proc.stdout!r}"
+    # Require a dotted version token (e.g. 1.2.0), not merely "some digit
+    # somewhere" — unrelated diagnostic output must not satisfy --version.
+    assert re.search(r"\d+\.\d+", proc.stdout), (
+        f"`--version` should print a version like X.Y[.Z]; got {proc.stdout!r}"
+    )
 
 
 def test_cli_check_config_ok(provider_bin, provider_config) -> None:

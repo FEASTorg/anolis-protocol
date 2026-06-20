@@ -4,6 +4,15 @@ This plugin is NOT auto-registered as a global pytest11 entry point (that would
 add Anolis-only options + an autouse fixture to every unrelated pytest run).
 Load it explicitly: the console script does `-p anolis_conformance.plugin`, and
 an uninstalled checkout runs `pytest -p anolis_conformance.plugin ...`.
+
+Two explicit modes (a misconfigured run must never exit 0 having tested nothing):
+
+* **provider mode** — all three of ``--provider-bin``/``--provider-config``/
+  ``--provider-profile`` are required; the provider contract tests run.
+* **self-test mode** (``--self-test``) — only the hermetic verifier self-tests
+  run, against in-repo fake providers; no provider args allowed.
+
+Supplying neither (or a partial set of provider args) is a usage error.
 """
 
 from __future__ import annotations
@@ -16,11 +25,44 @@ import pytest
 from .client import AdppClient
 from .profiles import load_profile
 
+_PROVIDER_OPTS = ("--provider-bin", "--provider-config", "--provider-profile")
+
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers", "experimental: opt-in/non-gating checks (run with `-m experimental`)."
     )
+    config.addinivalue_line(
+        "markers",
+        "executable_profile: Anolis executable-profile convention (the only tests a "
+        "provider waiver may xfail).",
+    )
+
+    self_test = config.getoption("--self-test")
+    present = [opt for opt in _PROVIDER_OPTS if config.getoption(opt)]
+
+    if self_test:
+        if present:
+            raise pytest.UsageError(
+                f"--self-test runs only the hermetic verifier tests and takes no "
+                f"provider args (got {', '.join(present)})."
+            )
+        config._adpp_mode = "self-test"  # type: ignore[attr-defined]
+        return
+
+    if not present:
+        raise pytest.UsageError(
+            "no mode selected: pass --self-test for the verifier self-tests, or all of "
+            f"{'/'.join(_PROVIDER_OPTS)} to run a provider through conformance."
+        )
+
+    missing = [opt for opt in _PROVIDER_OPTS if not config.getoption(opt)]
+    if missing:
+        raise pytest.UsageError(
+            f"provider conformance requires {', '.join(_PROVIDER_OPTS)}; missing "
+            f"{', '.join(missing)}. A partial invocation must not appear conformant."
+        )
+    config._adpp_mode = "provider"  # type: ignore[attr-defined]
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -34,11 +76,56 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "owned by the provider repo).",
     )
     group.addoption(
+        "--self-test",
+        action="store_true",
+        default=False,
+        help="Run only the hermetic verifier self-tests (no provider args).",
+    )
+    group.addoption(
         "--provider-extra-arg",
         action="append",
         default=[],
         help="Extra CLI arg to pass to the provider (repeatable).",
     )
+
+
+def _mode(config: pytest.Config) -> str:
+    return getattr(config, "_adpp_mode", "provider")
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+    """Restrict collection to the active mode, then validate waiver scope."""
+    self_test = _mode(config) == "self-test"
+    selected, deselected = [], []
+    for item in items:
+        is_selftest = item.path.name == "test_selftest.py"
+        (selected if is_selftest == self_test else deselected).append(item)
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = selected
+
+    if self_test:
+        return
+
+    # Provider mode: a waiver may only target an executable_profile test. Reject
+    # unknown/out-of-scope keys (typos, or an attempt to mask a core/transport
+    # failure) before any test runs.
+    raw = config.getoption("--provider-profile")
+    profile = load_profile(Path(raw))
+    waivable = {
+        item.originalname  # type: ignore[attr-defined]
+        for item in items
+        if item.get_closest_marker("executable_profile") is not None
+    }
+    unknown = set(profile.known_xfails) - waivable
+    if unknown:
+        raise pytest.UsageError(
+            f"--provider-profile waivers reference non-executable-profile tests "
+            f"{sorted(unknown)}; waivers may only target executable_profile tests "
+            f"({sorted(waivable)}). Waivers must never mask core/transport/verifier failures."
+        )
 
 
 @pytest.fixture(scope="session")
@@ -121,12 +208,16 @@ def ready_client(client, codes, status_text):
 
 @pytest.fixture(autouse=True)
 def _apply_known_xfails(request: pytest.FixtureRequest) -> None:
-    """Apply a provider's tracked profile gaps as xfails. No-ops without
-    --provider-profile (so the verifier self-tests and unrelated suites are
-    unaffected)."""
+    """Apply a provider's tracked executable-profile gaps as **strict** xfails.
+
+    No-ops outside provider mode (so the verifier self-tests and unrelated suites
+    are unaffected). Waivers apply ONLY to executable_profile tests — scope is
+    validated up front in pytest_collection_modifyitems — and are strict so a
+    fixed divergence fails (XPASS) until its waiver is removed.
+    """
     raw = request.config.getoption("--provider-profile", default=None)
-    if not raw:
+    if not raw or request.node.get_closest_marker("executable_profile") is None:
         return
-    reason = load_profile(Path(raw)).xfail_reason(request.node.name.split("[")[0])
+    reason = load_profile(Path(raw)).xfail_reason(request.node.originalname)
     if reason:
-        request.node.add_marker(pytest.mark.xfail(reason=reason, strict=False, run=True))
+        request.node.add_marker(pytest.mark.xfail(reason=reason, strict=True, run=True))
