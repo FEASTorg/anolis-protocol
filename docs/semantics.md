@@ -3,13 +3,21 @@
 This document defines the **normative semantics** of the
 **Anolis Device Provider Protocol (ADPP)** v1.
 
-> **Conformance levels.** Requirements tagged **[L2]** belong to *conformance
-> level 2* — a strengthened bar introduced after the initial release. Everything
-> untagged is *level 1* (the original bar). The wire contract is unchanged
-> between levels; L2 only tightens behavior. Because tightening conformance can
-> make a previously-conformant provider non-conformant, L2 is rolled out as a
-> staged transition (its conformance tests ship non-gating first, then graduate
-> to gating) — see `versioning.md`.
+> **Conformance levels.** A provider's conformance is stated as `ADPP v1/L<n>` —
+> the v1 wire contract plus a **cumulative** semantic bar. **Level 1** (L1, the
+> original bar) is everything in this document *not* tagged. **Level 2** (L2) is
+> L1 **plus** every requirement tagged **[L2]**; further levels are likewise
+> additive. The wire contract is identical across levels — a level only *tightens*
+> behavior.
+>
+> Levels are **opt-in**. A provider **declares** its level in its conformance
+> manifest (`conformance_level`, **default 1**) and SHOULD advertise it in Hello
+> metadata (`conformance_level`, **absent ⇒ 1**). The conformance harness runs
+> the requirements **up to the declared level** — all gating at that level (there
+> is no separate non-gating phase). Introducing a new level does **not**
+> invalidate lower-level providers; a plain "`ADPP v1` conformant" claim means
+> **at least L1**. Raising the *minimum* level required of all `ADPP v1`
+> providers is a breaking change — see `versioning.md`.
 
 ---
 
@@ -169,10 +177,12 @@ In v1:
 ### 7.1 ReadSignals behavior
 
 - Providers MAY return cached values, live values, or a combination.
-- **[L2]** Every `SignalValue` returned in a response — including the
-  partial-success reads of §7.4 — MUST set `timestamp` to the time the
-  measurement was observed at the source, and MUST set `quality` to a defined
-  value other than `QUALITY_UNSPECIFIED`. *(Level 1: these were SHOULD.)*
+- **[L2]** In a `CODE_OK` `ReadSignalsResponse` — including the partial-success
+  form of §7.4 — every `SignalValue` MUST set `timestamp` (field present, a valid
+  `google.protobuf.Timestamp` at the observation time) and MUST set `quality` to
+  a value defined by the current schema other than `QUALITY_UNSPECIFIED`. Error
+  responses carry no telemetry and are exempt. *(Level 1: `timestamp` was SHOULD;
+  `quality` was not mandated.)*
 - If a value exceeds `SignalSpec.stale_after_ms`, providers SHOULD report
   `QUALITY_STALE`.
 
@@ -229,45 +239,58 @@ providers MUST document how results are observed (typically via signals).
 
 ### 8.3 Validation
 
-Providers MUST validate:
+Providers MUST validate device existence, function existence, required
+arguments, argument types, and declared numeric bounds.
 
-- Device existence
-- Function existence
-- Required arguments
-- Argument types
-- Numeric bounds (when specified)
+**Status codes by category:**
 
-Invalid inputs MUST result in:
+- Unknown identifiers (device, function id, function name) → `CODE_NOT_FOUND`
+  (all levels).
+- **L1:** every other invalid input — wrong type, missing required argument, or a
+  value outside its declared bounds — → `CODE_INVALID_ARGUMENT`.
+- **[L2]** A value outside its declared bounds → `CODE_OUT_OF_RANGE` (a refinement
+  of the L1 mapping); all other invalid inputs remain `CODE_INVALID_ARGUMENT`.
 
-- `CODE_INVALID_ARGUMENT`, or
-- `CODE_NOT_FOUND` for unknown identifiers.
+A single provider satisfies exactly one of the two bound mappings, determined by
+its conformance level — they do not both apply at once.
 
-Bounds and value validity:
+**Numeric value rules ([L2]):**
 
 - Declared numeric bounds (`ArgSpec.min_*` / `ArgSpec.max_*`) are **inclusive**:
-  a value equal to a bound is valid.
-- **[L2]** A numeric argument outside its declared inclusive bounds MUST result
-  in `CODE_OUT_OF_RANGE` (distinct from `CODE_INVALID_ARGUMENT`).
-- **[L2]** A non-finite floating-point argument (`NaN`, `+Inf`, `-Inf`) where a
-  finite value is expected is malformed, not out-of-range, and MUST result in
-  `CODE_INVALID_ARGUMENT`.
-
-So: unknown identifiers → `CODE_NOT_FOUND`; values outside declared bounds →
-`CODE_OUT_OF_RANGE`; non-finite / wrong-type / missing-required values →
-`CODE_INVALID_ARGUMENT`.
+  a value equal to a bound is valid; a value strictly outside is out of range.
+- A `VALUE_TYPE_DOUBLE` argument that carries a declared bound MUST be finite. A
+  non-finite value (`NaN`, `+Inf`, `-Inf`) is malformed input and MUST be
+  rejected with `CODE_INVALID_ARGUMENT`. This finiteness check **precedes** the
+  bound check — so `+Inf` is `CODE_INVALID_ARGUMENT`, never `CODE_OUT_OF_RANGE`,
+  even though it numerically exceeds any maximum.
 
 ### 8.4 Deadlines
 
-- `CallRequest.deadline` is an optional absolute deadline.
-- A provider advertises whether it honors deadlines via the Hello metadata key
-  `supports_deadlines` (`"true"` / `"false"`; **absent ⇒ `"false"`**).
-- **[L2]** A provider advertising `supports_deadlines="true"` that cannot
-  complete a call before its `deadline` MUST abort and return
-  `CODE_DEADLINE_EXCEEDED`.
-- **[L2]** Regardless of deadline support, a provider MUST NOT report `CODE_OK`
-  for work it did not actually complete.
-- A provider that does not advertise deadline support MAY ignore `deadline`
-  (best-effort).
+`CallRequest.deadline` is an optional absolute deadline. A provider advertises
+whether it honors deadlines via the Hello metadata key `supports_deadlines`
+(`"true"` / `"false"`; **absent ⇒ `"false"`**). A provider that does not
+advertise support MAY ignore `deadline` (best-effort). When advertised
+(`supports_deadlines="true"`) the deadline applies to **every** call the provider
+accepts, and:
+
+- **[L2]** A malformed `deadline` (not a valid `google.protobuf.Timestamp`) →
+  `CODE_INVALID_ARGUMENT`.
+- **[L2]** If the deadline is **already expired** when the request is validated,
+  the provider MUST return `CODE_DEADLINE_EXCEEDED` and MUST NOT invoke the
+  function (no side effects).
+- **[L2]** If the deadline expires **during synchronous execution**, the provider
+  MUST make a documented best-effort to cancel and MUST return
+  `CODE_DEADLINE_EXCEEDED`. Because physical actuation can be irreversible once
+  issued, side effects MAY have occurred; the provider SHOULD report what is
+  known via `Status.details`. "Abort" here is best-effort, not a guarantee of no
+  effect.
+
+**`CODE_OK` means done — except for accepted async calls.** A provider MUST NOT
+report `CODE_OK` for **synchronous** work it did not complete. For an
+**asynchronous** call (§8.1), `CODE_OK` with `CallResponse.operation_id`
+populated means the call was **accepted** (not yet complete); for such calls the
+deadline governs *acceptance*, and results are observed later (typically via
+signals). This preserves §8.1.
 
 ---
 
@@ -300,7 +323,12 @@ So: unknown identifiers → `CODE_NOT_FOUND`; values outside declared bounds →
 
 - Unknown fields MUST be ignored (standard Protobuf behavior).
 - New optional fields may be added within v1.
-- Incompatible semantic or wire changes require a new major version (`v2`).
+- Incompatible **wire** changes require a new major version (`v2`).
+- **Semantic** tightening (a stricter `MUST`) is introduced as a new, **opt-in
+  conformance level** within the current major version (see the *Conformance
+  levels* note above and `versioning.md`). Raising the *minimum* level required of
+  all `ADPP v1` providers is itself a breaking change and requires a major
+  version.
 
 ---
 

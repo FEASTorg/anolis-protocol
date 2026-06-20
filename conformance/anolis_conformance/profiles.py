@@ -16,6 +16,7 @@ Manifest format (TOML)::
 
     provider_name = "anolis-provider-<name>"    # required; asserted against Hello
     has_mock_devices = true                     # optional, default true
+    conformance_level = 1                       # optional, default 1 (>=1)
 
     [waivers]                                   # optional; test base-name -> reason
     test_cli_version_flag = "no --version (<owner>/<repo>#<issue-number>)"
@@ -38,6 +39,10 @@ else:  # pragma: no cover - exercised only on 3.10
 class ProviderProfile:
     expected_provider_name: str
     has_mock_devices: bool = True  # config yields at least one describable device
+    # The cumulative conformance level the provider targets (>=1; see
+    # docs/semantics.md "Conformance levels"). The harness applies requirements up
+    # to this level. Default 1 keeps existing manifests valid.
+    conformance_level: int = 1
     # test-function base name -> reason (applied as a strict xfail)
     known_xfails: dict[str, str] = field(default_factory=dict)
 
@@ -59,11 +64,17 @@ def load_profile(path: Path) -> ProviderProfile:
     except tomllib.TOMLDecodeError as exc:
         raise SystemExit(f"--provider-profile {path}: invalid TOML ({exc})") from None
 
-    unknown_keys = set(data) - {"provider_name", "has_mock_devices", "waivers"}
+    unknown_keys = set(data) - {
+        "provider_name",
+        "has_mock_devices",
+        "conformance_level",
+        "waivers",
+    }
     if unknown_keys:
         raise SystemExit(
             f"--provider-profile {path}: unknown key(s) {sorted(unknown_keys)} "
-            f"(allowed: provider_name, has_mock_devices, waivers). Check for a typo."
+            f"(allowed: provider_name, has_mock_devices, conformance_level, waivers). "
+            f"Check for a typo."
         )
 
     provider_name = data.get("provider_name")
@@ -78,6 +89,13 @@ def load_profile(path: Path) -> ProviderProfile:
             f"--provider-profile {path}: 'has_mock_devices' must be a boolean"
         )
 
+    conformance_level = data.get("conformance_level", 1)
+    # bool is a subclass of int — reject it explicitly so `true` isn't read as 1.
+    if isinstance(conformance_level, bool) or not isinstance(conformance_level, int) or conformance_level < 1:
+        raise SystemExit(
+            f"--provider-profile {path}: 'conformance_level' must be an integer >= 1"
+        )
+
     waivers = data.get("waivers", {})
     if not isinstance(waivers, dict) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in waivers.items()
@@ -89,5 +107,6 @@ def load_profile(path: Path) -> ProviderProfile:
     return ProviderProfile(
         expected_provider_name=provider_name,
         has_mock_devices=has_mock_devices,
+        conformance_level=conformance_level,
         known_xfails=dict(waivers),
     )

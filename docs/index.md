@@ -67,8 +67,10 @@ These concerns are handled by Anolis or deployment-specific infrastructure.
 
 - The protocol is namespaced under `anolis.deviceprovider.v1`.
 - Providers **MUST** report the protocol version they support.
-- Breaking wire or semantic changes require a new major version directory
-  (`v2`, `v3`, …).
+- Breaking **wire** changes require a new major version directory (`v2`, `v3`, …).
+- **Semantic** tightening is introduced as an opt-in **conformance level** within
+  the current major version, not a new directory — see `semantics.md`
+  (*Conformance levels*) and `versioning.md`.
 
 Backward-compatible extensions (new fields, new optional messages) are
 allowed within v1.

@@ -26,21 +26,32 @@ touching the **wire contract** (the bytes on the stream). Tightening conformance
 a breaking change to implementers even though `buf breaking` sees nothing. It is
 **not** a silent `MINOR`/`PATCH`.
 
-Such changes are introduced as a new **conformance level** (see `semantics.md`,
-requirements tagged `[L2]`, `[L3]`, …) and rolled out as a **staged transition**:
+Such changes are introduced as a new, **opt-in conformance level** (`L2`, `L3`,
+…; see `semantics.md`). Levels are **cumulative**: `Ln` requires `L1` plus every
+clause tagged through `Ln`. A provider declares the level it targets in its
+conformance manifest (`conformance_level`, default `1`) and SHOULD advertise it
+in Hello metadata (`conformance_level`, absent ⇒ `1`).
 
-1. The new requirements are documented in `semantics.md`, tagged with their level.
-2. The conformance harness adds the corresponding tests **non-gating** (marked
-   `experimental`), so existing providers do not break when they bump the pinned
-   harness.
-3. All known providers are brought into compliance.
-4. The tests **graduate to gating** in a named release — the enforcement
-   milestone for that level, called out in the changelog.
+**SemVer treatment:**
 
-Out-of-tree providers will (future) declare their target conformance level in
-their provider manifest, so they can adopt levels on their own schedule rather
-than being broken by a harness bump. Until any out-of-tree providers exist, the
-staged transition above is sufficient.
+- **Introducing** a new optional level (documenting its clauses; the harness can
+  test them once a provider opts in) is **MINOR** — existing L1 providers are
+  unaffected.
+- **Raising the minimum/default level** required of all `ADPP v1` providers is
+  **breaking**: it must be a **major** release, or — preferably — it is never done
+  globally, and consumers simply require a specific level of the providers they
+  use.
+
+**Enforcement.** The harness runs the requirements **up to the provider's declared
+level**, all gating at that level, selected by a dedicated mechanism (a
+`conformance_level(n)` marker driven by the manifest) — **not** the generic
+`experimental` marker, which is reserved for genuinely unstable checks. A new
+level's tests therefore gate immediately for a provider that declares it, and
+never for one that does not; there is no global "graduation" event. The release
+that first ships a level's tests is recorded in `CHANGELOG.md`.
+
+Out-of-tree providers declare their target level the same way, adopting levels on
+their own schedule rather than being broken by a harness bump.
 
 ## Proto Rules
 
