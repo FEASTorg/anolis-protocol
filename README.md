@@ -25,15 +25,22 @@ Replace the version and hash from the [latest release](https://github.com/anolis
 
 **Python (wheel from the GitHub Release):**
 
-Each tagged release attaches a built wheel to the [GitHub Release](https://github.com/anolishq/anolis-protocol/releases/latest) (there is no PyPI publish). Pin it by URL:
+Each tagged release attaches a built wheel (generated protobuf bindings) to the [GitHub Release](https://github.com/anolishq/anolis-protocol/releases/latest) (there is no PyPI publish). Pin it by URL:
 
 ```sh
 pip install "anolis-protocol @ https://github.com/anolishq/anolis-protocol/releases/download/v1.1.4/anolis_protocol-1.1.4-py3-none-any.whl"
-# the cross-provider conformance harness adds a [conformance] extra:
-pip install "anolis-protocol[conformance] @ https://github.com/anolishq/anolis-protocol/releases/download/v1.1.4/anolis_protocol-1.1.4-py3-none-any.whl"
 ```
 
-The wheel includes the generated protobuf bindings and the conformance harness.
+The cross-provider **conformance harness** (the `[conformance]` extra + the
+`anolis-adpp-conformance` script) ships in the wheel from its **first release**
+onward — releases up to and including v1.2.0 predate it. Until that release is
+cut, install it from a checkout:
+
+```sh
+pip install ".[conformance]"
+# from a tagged release that contains the harness (replace once one exists):
+# pip install "anolis-protocol[conformance] @ https://github.com/anolishq/anolis-protocol/releases/download/<first-release-with-harness>/anolis_protocol-<ver>-py3-none-any.whl"
+```
 
 **buf BSR (code generation):**
 
