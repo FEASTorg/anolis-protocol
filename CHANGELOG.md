@@ -4,11 +4,45 @@ All notable changes to the Anolis Device Provider Protocol (ADPP) are documented
 
 ## [Unreleased]
 
+## [v1.3.0] — 2026-06-20
+
+### Added
+
+- **Cross-provider ADPP conformance harness**, shipped in the wheel (#26): a
+  generic verifier that drives any provider binary through the ADPP v1 wire
+  lifecycle and asserts compliance. Adds a `[conformance]` optional-dependency
+  extra and the `anolis-adpp-conformance` console script. Providers pull this
+  versioned artifact and supply their own identity/config/waivers via
+  `--provider-profile`; the contract ships **no implementer-specific data**.
+- **Normative profile docs** that give the harness's transport/executable
+  requirements an authority (so conventions don't become protocol law via tests
+  alone):
+  - `docs/profiles/framed-stdio-v1.md` — the stdio transport binding
+    (`uint32_le` framing, 1 MiB frame cap, Hello metadata, malformed-stream
+    behavior and exit codes). This is the named "mutual agreement" that
+    `semantics.md` §2 leaves to a binding.
+  - `docs/profiles/anolis-executable-profile-v1.md` — Anolis executable
+    conventions (an organizational acceptance profile, **not** ADPP).
+
+### Fixed
+
+- `handshake.proto`: corrected the `protocol_version` comment (`"1"` → `"v1"`,
+  the value the runtime and every provider actually require).
+
 ### CI
 
 - Add CI OK aggregator gate: removed `paths-ignore`, added `dorny/paths-filter`
   to detect code-vs-docs changes, gated all jobs behind the filter, and added a
   final `ok` job as the sole required status check for `main` branch protection.
+- Add a hermetic conformance lane on Python 3.10 + 3.12: verifier self-tests
+  against in-repo fake providers, a plugin-isolation regression, and a
+  misconfiguration gate (a misused invocation must exit non-zero, never green).
+
+### Notes
+
+- **No wire-contract change** — the proto schema is identical to v1.2.0. This is
+  an additive packaging/tooling + docs release; versioned MINOR to signal the
+  new conformance-harness capability shipped in the wheel.
 
 ## [v1.2.0] — 2026-04-24
 
