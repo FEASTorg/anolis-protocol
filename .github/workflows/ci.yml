@@ -80,11 +80,16 @@ jobs:
           anolis-adpp-conformance --provider-bin /x -p no:cacheprovider; [ $? -ne 0 ] || fail "one provider arg"
           anolis-adpp-conformance --provider-bin /x --provider-config /y -p no:cacheprovider; [ $? -ne 0 ] || fail "two provider args"
           anolis-adpp-conformance --self-test --provider-bin /x -p no:cacheprovider; [ $? -ne 0 ] || fail "--self-test + provider arg"
-          # A waiver targeting a non-executable-profile test must be rejected at collection.
+          # A waiver targeting a non-executable-profile test must be rejected at
+          # collection. Use REAL bin+config paths so the only possible failure
+          # reason is the waiver scope — and assert the specific diagnostic.
+          real_bin="$(mktemp)"; printf '#!/bin/sh\nexit 0\n' > "$real_bin"; chmod +x "$real_bin"
+          real_cfg="$(mktemp)"; echo '{}' > "$real_cfg"
           printf 'provider_name = "p"\n[waivers]\ntest_read_signals_response_shape = "bogus"\n' > /tmp/bad-profile.toml
-          anolis-adpp-conformance --provider-bin /x --provider-config /y --provider-profile /tmp/bad-profile.toml -p no:cacheprovider
-          [ $? -ne 0 ] || fail "out-of-scope waiver"
-          echo "OK: every misconfiguration returned nonzero"
+          out="$(anolis-adpp-conformance --provider-bin "$real_bin" --provider-config "$real_cfg" --provider-profile /tmp/bad-profile.toml -p no:cacheprovider 2>&1)"
+          [ $? -ne 0 ] || fail "out-of-scope waiver (exit)"
+          echo "$out" | grep -q "waivers may only target executable_profile tests" || fail "out-of-scope waiver fired for the wrong reason:\n$out"
+          echo "OK: every misconfiguration returned nonzero (waiver scope for the right reason)"
       # NOTE: cross-provider conformance (running the harness against a real
       # provider binary) lives in each PROVIDER repo's CI — the provider pulls
       # this pinned wheel + supplies its own --provider-profile. The contract

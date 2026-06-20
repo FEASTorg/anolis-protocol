@@ -2,9 +2,10 @@
 expects of a provider binary, distinct from ADPP wire conformance: the CLI
 surface, the WaitReady diagnostics the runtime reads, and process lifecycle.
 
-These are NOT ADPP protocol requirements. A binary can be ADPP-conformant and
-still diverge here; such gaps are declared as xfails in the provider's own
-`--provider-profile` manifest (see profiles.py for the schema).
+Normative source: ``docs/profiles/anolis-executable-profile-v1.md`` — an
+organizational acceptance profile, NOT ADPP conformance. A binary can be
+ADPP-conformant and still diverge here; such gaps are declared as xfails in the
+provider's own `--provider-profile` manifest (see profiles.py for the schema).
 """
 
 from __future__ import annotations
@@ -14,7 +15,6 @@ import subprocess
 
 import pytest
 
-from . import spec
 from .client import AdppClient
 
 # Every test here is an Anolis executable-profile convention — the only tests a
@@ -40,13 +40,6 @@ def test_clean_shutdown_on_stdin_eof(client: AdppClient) -> None:
     client.hello()
     code = client.close(timeout=5.0)  # closes stdin -> EOF
     assert code == 0, f"provider must exit 0 on stdin EOF; got {code}\n{client.output_tail(40)}"
-
-
-def test_multiple_roundtrips_stay_framed(ready_client: AdppClient, codes) -> None:
-    # Re-exercises framing across requests: stray stdout bytes would break the
-    # 2nd/3rd parse.
-    for _ in range(3):
-        assert ready_client.list_devices().status.code == codes.OK
 
 
 # ---- CLI ----------------------------------------------------------------

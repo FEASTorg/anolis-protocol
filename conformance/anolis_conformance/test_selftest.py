@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from .checks import ConformanceFailure, assert_controlled_malformed
+from .checks import ConformanceFailure, assert_controlled_malformed, assert_status_present
 from .client import (
     AdppClient,
     CorrelationError,
@@ -52,9 +52,11 @@ elif mode == "drip":
         out.write(b"x"); out.flush(); time.sleep(0.5)
 elif mode == "mid_frame":
     out.write(struct.pack("<I", 100)); out.write(b"abc"); out.flush(); sys.exit(0)
-elif mode in ("respond_ok", "respond_unspecified", "respond_error", "respond_then_crash"):
+elif mode in ("respond_ok", "respond_unspecified", "respond_error",
+              "respond_then_crash", "respond_error_then_exit_bad"):
     # Reply to a (malformed) frame without parsing it, to test the malformed-input
-    # validator: success/unspecified statuses and respond-then-crash must be rejected.
+    # validator: success/unspecified statuses, respond-then-crash, and
+    # respond-then-undocumented-exit must all be rejected.
     import protocol_pb2 as p
     resp = p.Response(); resp.request_id = 1
     if mode == "respond_ok":
@@ -66,7 +68,9 @@ elif mode in ("respond_ok", "respond_unspecified", "respond_error", "respond_the
     data = resp.SerializeToString()
     out.write(struct.pack("<I", len(data)) + data); out.flush()
     if mode == "respond_then_crash":
-        os.abort()
+        os.abort()                                   # SIGABRT -> negative exit
+    if mode == "respond_error_then_exit_bad":
+        sys.exit(7)                                  # undocumented exit after a response
     time.sleep(60)
 else:
     import protocol_pb2 as p
@@ -183,10 +187,13 @@ def test_selftest_wrong_request_id_detected(make_client) -> None:
 
 
 def test_selftest_missing_status_detected(make_client) -> None:
+    # Drive the REAL validator the suite uses, and require it to reject a
+    # response with no Status (semantics.md §10).
     client = make_client("no_status")
     try:
         resp = client.hello()
-        assert not resp.HasField("status"), "self-test expects the fake to omit status"
+        with pytest.raises(ConformanceFailure):
+            assert_status_present(resp)
     finally:
         client.close()
 
@@ -196,7 +203,14 @@ def test_selftest_missing_status_detected(make_client) -> None:
 
 @pytest.mark.parametrize(
     "mode",
-    ["respond_ok", "respond_unspecified", "respond_then_crash", "crash_signal", "exit_bad"],
+    [
+        "respond_ok",
+        "respond_unspecified",
+        "respond_then_crash",
+        "respond_error_then_exit_bad",
+        "crash_signal",
+        "exit_bad",
+    ],
 )
 def test_selftest_malformed_validator_rejects(make_client, codes, mode) -> None:
     client = make_client(mode)

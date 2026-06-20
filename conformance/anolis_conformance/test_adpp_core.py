@@ -9,12 +9,14 @@ from __future__ import annotations
 import pytest
 
 from . import spec
+from .checks import assert_status_present
 from .client import AdppClient
 
 
 # ---- handshake / version ------------------------------------------------
 def test_hello_v1_ok(client: AdppClient, profile, codes, status_text) -> None:
     resp = client.hello()
+    assert_status_present(resp)  # semantics.md §10: every Response carries a Status
     assert resp.status.code == codes.OK, status_text(resp)
     assert resp.request_id == 1, "Hello response must echo request_id"
     assert resp.hello.protocol_version == spec.PROTOCOL_VERSION
@@ -67,8 +69,10 @@ def test_describe_device(ready_client: AdppClient, codes, status_text) -> None:
         pytest.skip("no devices to describe")
     resp = ready_client.describe_device(devices[0].device_id)
     assert resp.status.code == codes.OK, status_text(resp)
-    caps = resp.describe_device.capabilities
-    assert len(caps.signals) + len(caps.functions) >= 1, "device must declare >=1 signal or function"
+    # semantics.md §6.1 requires the COMPLETE CapabilitySet, not a non-empty one —
+    # a zero-capability device is valid ADPP. (A provider that expects capabilities
+    # on its mock devices can assert that in its own profile/suite.)
+    assert resp.describe_device.HasField("capabilities"), "DescribeDevice must return a CapabilitySet"
 
 
 def test_describe_unknown_device_not_found(ready_client: AdppClient, codes, status_text) -> None:
@@ -115,6 +119,11 @@ def test_read_unknown_signal_consistent(ready_client: AdppClient, codes, status_
             return "fail"
         if resp.status.code == codes.OK:
             returned = {v.signal_id for v in resp.read_signals.values}
+            # The response carries values for the REQUESTED signals (minus unknown),
+            # never arbitrary/unrelated inventory.
+            assert returned <= set(signal_ids), (
+                f"partial result returned unrequested signals {returned - set(signal_ids)}"
+            )
             assert unknown not in returned, "partial variant must omit the unknown signal id"
             if known in signal_ids:
                 assert known in returned, (

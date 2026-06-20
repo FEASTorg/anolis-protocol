@@ -17,6 +17,17 @@ class ConformanceFailure(AssertionError):
     """A provider violated a conformance requirement."""
 
 
+def assert_status_present(response) -> None:
+    """Every Response MUST carry a Status (semantics.md §10)."""
+    if not response.HasField("status"):
+        raise ConformanceFailure("response is missing the required Status (semantics.md §10)")
+
+
+def _defined_error_codes(codes: SimpleNamespace) -> set[int]:
+    """Every status code the proto enum defines, minus OK and UNSPECIFIED."""
+    return set(vars(codes).values()) - {codes.OK, codes.UNSPECIFIED}
+
+
 def assert_controlled_malformed(
     client: AdppClient,
     codes: SimpleNamespace,
@@ -49,15 +60,20 @@ def assert_controlled_malformed(
         if not value.HasField("status"):
             raise ConformanceFailure("malformed input produced a response with no status")
         code = value.status.code
-        if code in (codes.OK, codes.UNSPECIFIED):
+        # Must be a DEFINED error code — not OK, not UNSPECIFIED, and not some
+        # arbitrary integer outside the enum.
+        if code not in _defined_error_codes(codes):
             raise ConformanceFailure(
-                f"malformed input must yield an error status; got code={code} "
+                f"malformed input must yield a defined error status; got code={code} "
                 f"message={value.status.message!r}"
             )
+        # A provider may respond-then-exit, but only with a documented exit code;
+        # a crash (negative) or an undocumented exit after responding is a failure.
         rc = client.settle_exit(settle)
-        if rc is not None and rc < 0:
+        if rc is not None and rc not in spec.ALLOWED_MALFORMED_EXIT_CODES:
             raise ConformanceFailure(
-                f"provider emitted a response and then crashed (killed by signal, returncode={rc})"
+                f"provider emitted a response then exited {rc} "
+                f"(allowed: {sorted(spec.ALLOWED_MALFORMED_EXIT_CODES)}; negative = crash)"
             )
         return
 

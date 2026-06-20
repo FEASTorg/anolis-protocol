@@ -5,10 +5,13 @@ through the ADPP wire lifecycle and checks its behavior. It is the verifier for
 cross-provider convergence work and the future provider-SDK's acceptance test
 (anolis-protocol#25).
 
-> **`docs/semantics.md` is normative, not this document.** The harness asserts
-> the behavior specified there; where the spec permits a choice, the harness
-> accepts every permitted behavior. If a check here ever conflicts with
-> `semantics.md`, `semantics.md` wins and the check is the bug.
+> **This document is not normative.** The normative sources are
+> `docs/semantics.md` (core ADPP), `docs/profiles/framed-stdio-v1.md` (the stdio
+> transport binding), and `docs/profiles/anolis-executable-profile-v1.md` (Anolis
+> executable conventions — an organizational profile, not ADPP). Each test suite
+> cites its source. Where a normative document permits a choice, the harness
+> accepts every permitted behavior; if a check here ever conflicts with its
+> source, the source wins and the check is the bug.
 
 **Status:** *foundation.* This PR delivers the generic harness + hermetic
 verifier self-tests. It ships **no implementer-specific data** — providers pull
@@ -24,10 +27,12 @@ Windows support is a tracked follow-up; don't present it as cross-platform yet.
 
 ```bash
 pip install anolis-protocol[conformance]
+# --provider-config is the mock-mode config for CI (no real i2c);
+# --provider-profile is the provider-owned manifest (identity + waivers).
 anolis-adpp-conformance \
   --provider-bin ./build/.../anolis-provider-X \
-  --provider-config config/conformance.yaml \   # mock mode for CI (no real i2c)
-  --provider-profile conformance.toml           # provider-owned: identity + waivers
+  --provider-config config/conformance.yaml \
+  --provider-profile conformance.toml
 ```
 
 `--provider-profile` points at a manifest **owned by the provider repo** — the
@@ -55,7 +60,7 @@ not conflated):
    `request_id` correlation, capabilities, and read/call **semantics** per
    `semantics.md`. Examples of deferring to the spec:
    - Unknown signal id → the provider must pick **one consistent** behavior:
-     fail `NOT_FOUND` **or** return partial results omitting it (§7.1). The
+     fail `NOT_FOUND` **or** return partial results omitting it (§7.4). The
      harness accepts either.
    - Both `function_id` and `function_name` given → the provider **MUST prefer
      `function_id`** (§6.2). The harness does **not** require rejecting a

@@ -3,9 +3,10 @@ provider supplies at run time.
 
 A profile declares a provider's expected identity and its **known divergences** —
 checks it is expected to fail today because of a tracked gap. Divergences apply
-as non-strict ``xfail``s (green-as-baseline; an xPASS means the gap was fixed —
-remove the entry). They cover only **Anolis executable-profile** expectations
-(CLI, runtime-read diagnostics), NOT ADPP wire behavior the spec already permits.
+as **strict** ``xfail``s (a fixed gap fails as XPASS until its waiver is removed)
+and cover only **Anolis executable-profile** expectations (CLI, runtime-read
+diagnostics), NOT ADPP wire behavior the spec permits, core protocol, or
+transport — those are rejected at collection (see plugin.py).
 
 This module ships **no** implementer-specific data. Each provider owns its own
 manifest in its own repo and passes it via ``--provider-profile``, so the
@@ -37,7 +38,7 @@ else:  # pragma: no cover - exercised only on 3.10
 class ProviderProfile:
     expected_provider_name: str
     has_mock_devices: bool = True  # config yields at least one describable device
-    # test-function base name -> reason (applied as xfail(strict=False))
+    # test-function base name -> reason (applied as a strict xfail)
     known_xfails: dict[str, str] = field(default_factory=dict)
 
     def xfail_reason(self, test_name: str) -> str | None:

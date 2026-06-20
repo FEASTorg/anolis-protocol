@@ -10,7 +10,9 @@ Run it against a provider binary:
         --provider-config config/conformance.yaml \\
         --provider-profile conformance.toml
 
-or equivalently ``pytest --pyargs anolis_conformance --provider-bin ...``.
+or equivalently (the plugin is not globally registered, so load it explicitly)::
+
+    pytest -p anolis_conformance.plugin --pyargs anolis_conformance --provider-bin ...
 """
 
 __all__ = ["AdppClient", "ProviderProfile", "load_profile"]

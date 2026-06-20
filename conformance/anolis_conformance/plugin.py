@@ -198,7 +198,10 @@ def client(protocol, provider_bin, provider_config, provider_extra_args):
 @pytest.fixture
 def ready_client(client, codes, status_text):
     """A client past the Hello (+ WaitReady, derived from advertised metadata) handshake."""
+    from .checks import assert_status_present
+
     resp = client.hello()
+    assert_status_present(resp)
     assert resp.status.code == codes.OK, status_text(resp)
     if resp.hello.metadata.get("supports_wait_ready") == "true":
         wr = client.wait_ready()

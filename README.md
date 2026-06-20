@@ -23,13 +23,17 @@ FetchContent_MakeAvailable(anolis_protocol)
 
 Replace the version and hash from the [latest release](https://github.com/anolishq/anolis-protocol/releases/latest) `SHA256SUMS` file.
 
-**Python (PyPI wheel):**
+**Python (wheel from the GitHub Release):**
+
+Each tagged release attaches a built wheel to the [GitHub Release](https://github.com/anolishq/anolis-protocol/releases/latest) (there is no PyPI publish). Pin it by URL:
 
 ```sh
-pip install anolis-protocol
+pip install "anolis-protocol @ https://github.com/anolishq/anolis-protocol/releases/download/v1.1.4/anolis_protocol-1.1.4-py3-none-any.whl"
+# the cross-provider conformance harness adds a [conformance] extra:
+pip install "anolis-protocol[conformance] @ https://github.com/anolishq/anolis-protocol/releases/download/v1.1.4/anolis_protocol-1.1.4-py3-none-any.whl"
 ```
 
-The PyPI package is published on each tagged release and includes the generated protobuf bindings.
+The wheel includes the generated protobuf bindings and the conformance harness.
 
 **buf BSR (code generation):**
 
@@ -58,8 +62,10 @@ buf generate
 ```
 
 - Owns ADPP protobuf schema used by `anolis` and providers.
-- Contains protocol-only artifacts (schema + semantics + compatibility docs).
-- Contains no runtime/provider implementation code.
+- Contains the protocol contract (schema + normative semantics/profile docs) plus
+  the generic **conformance harness** that verifies any provider against it.
+- Contains **no provider/runtime implementation code** — the harness is a generic
+  verifier, and it ships no knowledge of any specific provider.
 
 ## Layout
 
@@ -82,9 +88,15 @@ anolis-protocol/
 │               ├── readiness.proto   # WaitReady request/response
 │               ├── types.proto       # Device, CapabilitySet, FunctionSpec, ArgSpec
 │               └── value.proto       # Value, ValueType
+├── conformance/            # generic ADPP conformance harness (shipped in the wheel)
+│   ├── anolis_conformance/ # AdppClient, spec, checks, the three contract suites
+│   └── ADPP-CONFORMANCE.md # how to run it (non-normative)
 └── docs/
     ├── index.md
-    ├── semantics.md
+    ├── semantics.md        # core ADPP v1 (normative)
+    ├── profiles/
+    │   ├── framed-stdio-v1.md            # stdio transport binding (normative)
+    │   └── anolis-executable-profile-v1.md  # Anolis executable conventions
     └── versioning.md
 ```
 

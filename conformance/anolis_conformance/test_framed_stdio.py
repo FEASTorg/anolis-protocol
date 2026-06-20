@@ -1,5 +1,8 @@
-"""ADPP *framed-stdio profile* conformance — the uint32-LE framing, the 1 MiB
-cap, the framed-stdio Hello metadata, and behavior on a malformed/garbage stream.
+"""ADPP *framed-stdio profile* conformance.
+
+Normative source: ``docs/profiles/framed-stdio-v1.md`` (the named stdio binding
+that ``semantics.md`` §2 leaves to mutual agreement) — the uint32-LE framing, the
+1 MiB cap, the Hello metadata, and controlled malformed-stream behavior.
 
 A malformed frame must yield a CONTROLLED outcome — a well-formed framed *error*
 response, or a clean documented exit (codes 0/2/3). A crash (process killed by a
@@ -85,12 +88,30 @@ def test_framing_fragmented_request_reassembled(client: AdppClient, codes, statu
     assert resp.hello.protocol_version == spec.PROTOCOL_VERSION, "reassembled response must be a Hello"
 
 
-def test_framing_two_coalesced_requests(client: AdppClient, codes, status_text) -> None:
-    # Two frames written back-to-back in one buffer must each get an OK response.
-    client.send_raw(_hello_frame(client, 1, "coalesce") + _hello_frame(client, 2, "coalesce"))
-    r1 = client.read_response(timeout=5.0)
-    r2 = client.read_response(timeout=5.0)
+def _list_devices_frame(client: AdppClient, rid: int) -> bytes:
+    req = client.protocol.Request(request_id=rid)
+    req.list_devices.include_health = False
+    body = req.SerializeToString()
+    return struct.pack("<I", len(body)) + body
+
+
+def test_framing_two_coalesced_requests(ready_client: AdppClient, codes, status_text) -> None:
+    # Post-handshake, two valid requests written back-to-back in one buffer must
+    # each get a correlated OK response. (Uses ListDevices, not a repeated Hello —
+    # semantics.md does not define a second handshake as a must-succeed operation,
+    # so this isolates frame coalescing from session-state semantics.)
+    ready_client.send_raw(_list_devices_frame(ready_client, 100) + _list_devices_frame(ready_client, 101))
+    r1 = ready_client.read_response(timeout=5.0)
+    r2 = ready_client.read_response(timeout=5.0)
     assert r1 is not None and r2 is not None, "both coalesced requests must be answered"
-    assert {r1.request_id, r2.request_id} == {1, 2}, "responses must echo both request_ids"
+    assert {r1.request_id, r2.request_id} == {100, 101}, "responses must echo both request_ids"
     for r in (r1, r2):
-        assert r.status.code == codes.OK, f"coalesced Hello must be OK; got {status_text(r)}"
+        assert r.status.code == codes.OK, f"coalesced ListDevices must be OK; got {status_text(r)}"
+
+
+def test_multiple_roundtrips_stay_framed(ready_client: AdppClient, codes) -> None:
+    # Transport integrity across requests: stray stdout bytes would break the
+    # 2nd/3rd parse. Lives here (framed-stdio, non-waivable), not in the
+    # executable profile — a framing failure must never be waivable.
+    for _ in range(3):
+        assert ready_client.list_devices().status.code == codes.OK
