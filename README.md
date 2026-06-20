@@ -32,14 +32,12 @@ pip install "anolis-protocol @ https://github.com/anolishq/anolis-protocol/relea
 ```
 
 The cross-provider **conformance harness** (the `[conformance]` extra + the
-`anolis-adpp-conformance` script) ships in the wheel from its **first release**
-onward — releases up to and including v1.2.0 predate it. Until that release is
-cut, install it from a checkout:
+`anolis-adpp-conformance` script) ships in the wheel from **v1.3.0** onward
+(releases up to and including v1.2.0 predate it):
 
 ```sh
-pip install ".[conformance]"
-# from a tagged release that contains the harness (replace once one exists):
-# pip install "anolis-protocol[conformance] @ https://github.com/anolishq/anolis-protocol/releases/download/<first-release-with-harness>/anolis_protocol-<ver>-py3-none-any.whl"
+pip install "anolis-protocol[conformance] @ https://github.com/anolishq/anolis-protocol/releases/download/v1.3.0/anolis_protocol-1.3.0-py3-none-any.whl"
+# or, from a checkout: pip install ".[conformance]"
 ```
 
 **buf BSR (code generation):**
