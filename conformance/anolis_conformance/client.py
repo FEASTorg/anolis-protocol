@@ -9,17 +9,30 @@ from __future__ import annotations
 import select
 import struct
 import subprocess
+import time
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Sequence
 
 from ._process import LineCapture, terminate_process
 
-MAX_FRAME_BYTES = 1024 * 1024  # ADPP guardrail (1 MiB)
+MAX_FRAME_BYTES = 1024 * 1024  # ADPP guardrail (1 MiB), enforced both directions
 
 
 class ProviderClosed(RuntimeError):
     """Raised when the provider stream closes unexpectedly mid-exchange."""
+
+
+class ProviderHang(RuntimeError):
+    """Raised when the provider neither responds nor exits within the deadline."""
+
+
+class OversizedResponse(RuntimeError):
+    """Raised when a provider advertises a response frame larger than the cap."""
+
+
+class CorrelationError(RuntimeError):
+    """Raised when a response does not echo the request's request_id."""
 
 
 class AdppClient:
@@ -90,17 +103,20 @@ class AdppClient:
     def send_frame(self, payload: bytes) -> None:
         self.send_raw(struct.pack("<I", len(payload)) + payload)
 
-    def _read_exact(self, length: int, timeout: float) -> bytes | None:
-        """Read exactly ``length`` bytes within ``timeout``; None on clean EOF."""
+    def _read_exact(self, length: int, deadline: float) -> bytes | None:
+        """Read exactly ``length`` bytes before the absolute ``deadline``
+        (``time.monotonic`` clock); None on clean EOF at a frame boundary."""
         stream = self.process.stdout
         assert stream is not None
         fd = stream.fileno()
         out = bytearray()
-        deadline_budget = timeout
         while len(out) < length:
-            ready, _, _ = select.select([fd], [], [], deadline_budget)
-            if not ready:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 raise TimeoutError(f"timed out reading {length} bytes (got {len(out)})")
+            ready, _, _ = select.select([fd], [], [], remaining)
+            if not ready:
+                continue  # re-check the absolute deadline (a slow drip cannot stretch it)
             chunk = stream.read(length - len(out))
             if not chunk:
                 if not out:
@@ -112,17 +128,52 @@ class AdppClient:
         return bytes(out)
 
     def read_response(self, timeout: float = 5.0) -> Any | None:
-        """Read one framed Response; None if the provider closed cleanly."""
-        header = self._read_exact(4, timeout)
+        """Read one framed Response; None if the provider closed cleanly.
+
+        Enforces the 1 MiB frame cap on the *response* too — a broken provider
+        must not be able to make the harness allocate gigabytes.
+        """
+        deadline = time.monotonic() + timeout
+        header = self._read_exact(4, deadline)
         if header is None:
             return None
         (length,) = struct.unpack("<I", header)
-        body = self._read_exact(length, timeout)
+        if length > MAX_FRAME_BYTES:
+            raise OversizedResponse(f"response frame length {length} exceeds {MAX_FRAME_BYTES}")
+        body = self._read_exact(length, deadline)
         if body is None:
             raise ProviderClosed("stream closed after length prefix")
         response = self.protocol.Response()
         response.ParseFromString(body)
         return response
+
+    def await_outcome(self, timeout: float = 3.0) -> tuple[str, Any]:
+        """For malformed-input tests: classify what the provider does next.
+
+        Returns one of:
+        - ("response", Response)  — a well-formed framed response was emitted
+        - ("exit", returncode)    — the process terminated (inspect the code)
+        Raises ProviderHang if it neither responds nor exits in time, and
+        OversizedResponse if it advertises an over-cap frame.
+        """
+        try:
+            resp = self.read_response(timeout=timeout)
+        except ProviderClosed:
+            return ("exit", self._wait_exit(timeout))
+        except TimeoutError:
+            if self.process.poll() is None:
+                raise ProviderHang(f"no response, no exit within {timeout}s\n{self.output_tail(40)}")
+            return ("exit", self.process.poll())
+        if resp is None:  # clean EOF -> the process exited
+            return ("exit", self._wait_exit(timeout))
+        return ("response", resp)
+
+    def _wait_exit(self, timeout: float) -> int | None:
+        try:
+            self.process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            terminate_process(self.process, timeout=timeout)
+        return self.process.poll()
 
     def send_request(self, request: Any, timeout: float = 5.0) -> Any:
         if not self.is_running():
@@ -133,6 +184,10 @@ class AdppClient:
         response = self.read_response(timeout)
         if response is None:
             raise ProviderClosed(f"no response (provider closed)\n{self.output_tail(60)}")
+        if response.request_id != request.request_id:
+            raise CorrelationError(
+                f"response request_id {response.request_id} != request {request.request_id}"
+            )
         return response
 
     # ---- typed ADPP operations ------------------------------------------

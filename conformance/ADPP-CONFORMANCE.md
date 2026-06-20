@@ -1,10 +1,22 @@
-# ADPP provider conformance
+# ADPP provider conformance harness
 
-The executable acceptance spec for an Anolis Device Provider Protocol (ADPP) v1
-provider. The harness in `anolis_conformance/` drives a provider **binary**
-through the wire lifecycle and asserts the behavior below. It is the verifier
-for cross-provider convergence work and the future provider-SDK's acceptance
-test (anolis-protocol#25).
+A binary-level acceptance harness that drives an Anolis provider **executable**
+through the ADPP wire lifecycle and checks its behavior. It is the verifier for
+cross-provider convergence work and the future provider-SDK's acceptance test
+(anolis-protocol#25).
+
+> **`docs/semantics.md` is normative, not this document.** The harness asserts
+> the behavior specified there; where the spec permits a choice, the harness
+> accepts every permitted behavior. If a check here ever conflicts with
+> `semantics.md`, `semantics.md` wins and the check is the bug.
+
+**Status:** *foundation.* This PR delivers the harness + verifier self-tests +
+an in-repo canary. Per-provider CI lanes, the full assertion set, the version
+alignment, and strict provider-owned waivers are tracked follow-ups under #25 —
+do not read this as "all of #25 is done".
+
+**Platform:** Linux/POSIX only for now (the client uses `select` on pipes).
+Windows support is a tracked follow-up; don't present it as cross-platform yet.
 
 ## Running it
 
@@ -12,76 +24,72 @@ test (anolis-protocol#25).
 pip install anolis-protocol[conformance]
 anolis-adpp-conformance \
   --provider-bin ./build/.../anolis-provider-X \
-  --provider-config config/conformance.yaml \
-  --profile X            # sim | ezo | bread
+  --provider-config config/conformance.yaml \   # mock mode for CI (no real i2c)
+  --profile X                                    # sim | ezo | bread
 ```
 
-(Equivalently `pytest --pyargs anolis_conformance --provider-bin ...`.) Each
-provider runs it as a CTest `provider.conformance` lane in its own CI. The
-config should put hardware-backed providers in **mock mode** so the suite runs
-without real i2c (ezo/bread: `bus_path: mock://...`; sim is always simulated).
+The console script loads the plugin explicitly and defaults to the gating set
+(`-m "not experimental"`). The plugin is **not** a global `pytest11` entry point,
+so installing the wheel never affects unrelated pytest runs.
 
-## Wire facts the suite pins
+## Three separate contracts
 
-- **Transport:** `uint32` little-endian length prefix + serialized protobuf;
-  1 MiB max frame; one in-flight request per session; every `Response` echoes
-  `request_id` and carries a `Status`.
-- **Protocol version:** the literal string **`v1`** (the `handshake.proto`
-  comment historically said `"1"` — the runtime and every provider use `v1`).
-- **Status codes** are resolved from the proto enum at runtime — never
-  hardcoded (the enum is not sequential: `OK=1`, `INVALID_ARGUMENT=10`,
-  `NOT_FOUND=11`, `FAILED_PRECONDITION=12`, `UNIMPLEMENTED=14`,
-  `DEADLINE_EXCEEDED=20`, `UNAVAILABLE=21`, `INTERNAL=30`, …).
+The harness tests three distinct contracts (kept in separate modules so they are
+not conflated):
 
-## Assertion groups
+1. **ADPP core protocol** (`test_adpp_core.py`) — messages, status codes,
+   `request_id` correlation, capabilities, and read/call **semantics** per
+   `semantics.md`. Examples of deferring to the spec:
+   - Unknown signal id → the provider must pick **one consistent** behavior:
+     fail `NOT_FOUND` **or** return partial results omitting it (§7.1). The
+     harness accepts either.
+   - Both `function_id` and `function_name` given → the provider **MUST prefer
+     `function_id`** (§6.2). The harness does **not** require rejecting a
+     conflict.
+   - Unsupported version → `FAILED_PRECONDITION` **or** `UNIMPLEMENTED` (§3).
+2. **ADPP framed-stdio profile** (`test_framed_stdio.py`) — `uint32_le` framing,
+   the 1 MiB cap, fragmentation/coalescing, and **controlled** handling of a
+   malformed stream: a well-formed framed error response, or a clean documented
+   exit (codes 0/2/3). A crash (process killed by a signal → negative return
+   code), a hang, or an over-cap/malformed response is a **failure**.
+3. **Anolis provider executable profile** (`test_executable_profile.py`) — CLI
+   surface (`--version`, `--check-config`), the WaitReady diagnostics the runtime
+   reads (`init_time_ms`), and process lifecycle. **These are Anolis conventions,
+   not ADPP requirements** — a binary can be ADPP-conformant and still diverge
+   here.
 
-1. **Handshake / version** — `hello(v1)` → `OK`, echoes `provider_name` +
-   `protocol_version=v1` + `request_id`; required metadata keys present
-   (`transport`, `max_frame_bytes`, `supports_wait_ready`); non-`v1` →
-   `FAILED_PRECONDITION`; `request_id` increments and echoes.
-2. **Framing robustness** — oversized length header, zero-length frame,
-   truncated frame, garbage payload → the provider must **respond or terminate
-   promptly, never hang**.
-3. **Lifecycle / readiness** — if `supports_wait_ready`, `wait_ready` → `OK`
-   with the standard diagnostics (minimum `init_time_ms`).
-4. **Inventory / capabilities** — `list_devices` → `OK` (≥1 device in mock
-   mode); `describe_device` → `OK` with ≥1 signal or function; unknown device →
-   `NOT_FOUND`.
-5. **Read / call** — `read_signals` default set returns a well-formed response
-   (mock backends may report data unavailable); a read mixing a known + unknown
-   signal id must fail `NOT_FOUND` (not return partial); unknown function →
-   `NOT_FOUND`/`UNIMPLEMENTED`; a conflicting `function_id`/`function_name` →
-   `INVALID_ARGUMENT`.
-6. **Health (experimental)** — `get_health` must return a well-formed status.
-   Non-gating: the runtime does not call it today.
-7. **Process hygiene** — clean exit (code 0) on stdin EOF; multiple round-trips
-   stay correctly framed (no stray stdout bytes).
-8. **CLI** — `--version` exits 0 with a version string; `--check-config` on a
-   valid config exits 0.
+Concurrency note: `semantics.md` allows concurrent processing and out-of-order
+responses (correlate by `request_id`). The runtime's one-in-flight serialization
+is a runtime profile, **not** an ADPP restriction — the harness does not require it.
 
-## Canonical conventions (locked)
+## Verifier self-tests
 
-- **Capability ids:** per-type `function_id`s starting at 1; snake_case
-  `signal_id`s.
-- **Hello metadata:** the three required keys above are standard; providers may
-  add extras.
-- **WaitReady diagnostics:** standardize on a small key set (`init_time_ms`,
-  `provider_impl`, `device_count`, `ready`) — no proto change. (A typed `ready`
-  field is a tracked future consideration.)
+`test_selftest.py` drives the harness against deliberately-faulty fake providers
+(hang, signal-crash, over-cap response, byte-drip, mid-frame close, wrong
+`request_id`, missing status) and asserts the harness **rejects** each. These are
+hermetic (no external binary) and are what make the verifier trustworthy.
 
-## Known-divergence policy
+## Waiver (`xfail`) policy
 
-A provider's tracked spec gaps are declared in its `ProviderProfile`
-(`profiles.py`) and applied as **non-strict `xfail`s**, so the suite is
-green-as-baseline while documenting the gap. An xPASS means the gap was fixed —
-remove the entry and the assertion becomes a hard requirement. Current baseline
-divergences (all tracked under anolis-protocol#25):
+A provider's tracked gaps live in its `ProviderProfile` and apply as non-strict
+`xfail`s (green-as-baseline; an xPASS means the gap was fixed — remove the entry).
+Waivers cover **only executable-profile** gaps, never behavior `semantics.md`
+permits. Current baseline:
 
-| Provider | Divergence |
+| Provider | Waiver (executable profile) |
 | --- | --- |
-| sim | read mixing known+unknown ids returns partial instead of `NOT_FOUND` (T0.1); no `--version` |
-| bread | conflicting `function_id`/`function_name` not rejected (T0.4); `wait_ready` omits `init_time_ms` |
-| ezo | none — fully conformant at baseline |
+| sim | no `--version` |
+| bread | `wait_ready` omits `init_time_ms` |
+| ezo | none |
 
-These are exactly the kinds of inconsistencies the convergence waves will fix;
-the harness is what verifies each fix.
+Follow-up (#25): make waivers strict + provider-owned (an issue URL/owner/expiry
+per waiver, living in each provider repo), so the protocol package doesn't
+re-release for every provider exception.
+
+## Not yet covered (follow-ups, #25)
+
+Positive calls (by id and name) with valid args; argument type/bound validation;
+deadline behavior; typed-value/quality/timestamp assertions; full readiness
+diagnostics; pre-Hello handling; capability id/name-convention checks; and the
+per-provider CI/CTest `provider.conformance` lanes (sim/ezo/bread), plus an ezo
+`mock://` conformance config and the sim Python wheel version-pin alignment.

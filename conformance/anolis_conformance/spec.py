@@ -12,12 +12,17 @@ from types import ModuleType, SimpleNamespace
 # comment says "1" but the runtime + every provider require/emit "v1".)
 PROTOCOL_VERSION = "v1"
 
-# Hello metadata keys every provider must advertise (extras allowed).
+# Hello metadata keys every provider must advertise (extras allowed) + the
+# expected values for the framed-stdio profile.
 REQUIRED_HELLO_METADATA_KEYS = frozenset({"transport", "max_frame_bytes", "supports_wait_ready"})
+EXPECTED_TRANSPORT = "stdio+uint32_le"
+EXPECTED_MAX_FRAME_BYTES = str(1024 * 1024)
 
-# WaitReady diagnostics keys the standard expects (decision: standardize the key
-# set, no proto change). Only `init_time_ms` is read by the runtime today.
-STANDARD_WAIT_READY_DIAGNOSTICS_KEYS = frozenset({"init_time_ms", "provider_impl", "device_count"})
+# Documented framed-stdio exit codes a provider MAY use to terminate on a
+# malformed/garbage stream: 0 = clean EOF, 2 = read-frame error, 3 = parse error.
+# A NEGATIVE return code (killed by a signal: SIGSEGV/SIGABRT) is always a crash
+# and never an acceptable malformed-input outcome.
+ALLOWED_MALFORMED_EXIT_CODES = frozenset({0, 2, 3})
 
 _CODE_NAMES = (
     "CODE_OK",

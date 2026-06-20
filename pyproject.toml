@@ -19,9 +19,10 @@ conformance = ["pytest>=7"]
 
 [project.scripts]
 anolis-adpp-conformance = "anolis_conformance.cli:main"
-
-[project.entry-points.pytest11]
-anolis-conformance = "anolis_conformance.plugin"
+# NOTE: deliberately NOT registered as a global [project.entry-points.pytest11]
+# plugin — that would add Anolis-only CLI options + fixtures to every unrelated
+# pytest run in an environment where this wheel is installed. The console script
+# and CI load the plugin explicitly with `-p anolis_conformance.plugin`.
 
 [tool.hatch.version]
 source = "vcs"

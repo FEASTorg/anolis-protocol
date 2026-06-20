@@ -59,11 +59,20 @@ jobs:
           EOF
       - name: Install the wheel (with conformance extra)
         run: pip install ".[conformance]"
-      - name: Fetch the released provider-sim binary
+      - name: Verifier self-tests (hermetic — no external binary)
+        run: anolis-adpp-conformance -k selftest -p no:cacheprovider -ra
+      - name: Plugin isolation regression (unrelated pytest must still pass)
+        run: |
+          mkdir -p /tmp/unrelated
+          printf 'def test_unrelated():\n    assert True\n' > /tmp/unrelated/test_unrelated.py
+          python -m pytest /tmp/unrelated -q -p no:cacheprovider
+      - name: Fetch the PINNED provider-sim release (deterministic canary)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download -R anolishq/anolis-provider-sim --pattern '*linux-x86_64.tar.gz' -D sim
+          # Pinned tag (bump deliberately) so a new sim release can't silently
+          # change this required CI result.
+          gh release download v0.2.4 -R anolishq/anolis-provider-sim --pattern '*linux-x86_64.tar.gz' -D sim
           tar -xzf sim/*linux-x86_64.tar.gz -C sim
           echo "SIM_BIN=$(find "$PWD/sim" -type f -name anolis-provider-sim | head -1)" >> "$GITHUB_ENV"
       - name: Write a minimal sim config
@@ -76,7 +85,7 @@ jobs:
           simulation:
             mode: inert
           EOF
-      - name: Run the conformance harness against sim
+      - name: Conformance canary against the pinned sim binary
         run: |
           chmod +x "$SIM_BIN"
           anolis-adpp-conformance \

@@ -1,4 +1,10 @@
-"""pytest wiring for the cross-provider ADPP conformance suite."""
+"""pytest wiring for the cross-provider ADPP conformance suite.
+
+This plugin is NOT auto-registered as a global pytest11 entry point (that would
+add Anolis-only options + an autouse fixture to every unrelated pytest run).
+Load it explicitly: the console script does `-p anolis_conformance.plugin`, and
+an uninstalled checkout runs `pytest -p anolis_conformance.plugin ...`.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +14,13 @@ from pathlib import Path
 import pytest
 
 from .client import AdppClient
-from .profiles import ProviderProfile, get_profile
+from .profiles import get_profile
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers", "experimental: opt-in/non-gating checks (run with `-m experimental`)."
+    )
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -47,10 +59,10 @@ def status_text(protocol):
 
 
 @pytest.fixture(scope="session")
-def profile(request: pytest.FixtureRequest) -> ProviderProfile:
+def profile(request: pytest.FixtureRequest):
     name = request.config.getoption("--profile")
     if not name:
-        pytest.fail("--profile is required (sim|ezo|bread)")
+        pytest.skip("conformance test requires --profile (sim|ezo|bread)")
     return get_profile(name)
 
 
@@ -58,7 +70,7 @@ def profile(request: pytest.FixtureRequest) -> ProviderProfile:
 def provider_bin(request: pytest.FixtureRequest) -> Path:
     raw = request.config.getoption("--provider-bin")
     if not raw:
-        pytest.fail("--provider-bin is required")
+        pytest.skip("conformance test requires --provider-bin")
     path = Path(raw)
     if not path.exists():
         pytest.fail(f"--provider-bin not found: {path}")
@@ -69,7 +81,7 @@ def provider_bin(request: pytest.FixtureRequest) -> Path:
 def provider_config(request: pytest.FixtureRequest) -> Path:
     raw = request.config.getoption("--provider-config")
     if not raw:
-        pytest.fail("--provider-config is required")
+        pytest.skip("conformance test requires --provider-config")
     path = Path(raw)
     if not path.exists():
         pytest.fail(f"--provider-config not found: {path}")
@@ -92,18 +104,23 @@ def client(protocol, provider_bin, provider_config, provider_extra_args):
 
 
 @pytest.fixture
-def ready_client(client, profile, codes, status_text):
-    """A client that has completed the Hello (+ WaitReady) handshake."""
+def ready_client(client, codes, status_text):
+    """A client past the Hello (+ WaitReady, derived from advertised metadata) handshake."""
     resp = client.hello()
     assert resp.status.code == codes.OK, status_text(resp)
-    if profile.supports_wait_ready:
-        client.wait_ready()
+    if resp.hello.metadata.get("supports_wait_ready") == "true":
+        wr = client.wait_ready()
+        assert wr.status.code == codes.OK, f"wait_ready failed: {status_text(wr)}"
     return client
 
 
 @pytest.fixture(autouse=True)
-def _apply_known_xfails(request: pytest.FixtureRequest, profile: ProviderProfile) -> None:
-    """Apply a provider's tracked spec gaps as non-strict xfails (green-as-baseline)."""
-    reason = profile.xfail_reason(request.node.name.split("[")[0])
+def _apply_known_xfails(request: pytest.FixtureRequest) -> None:
+    """Apply a provider's tracked profile gaps as xfails. No-ops without --profile
+    (so the verifier self-tests and unrelated suites are unaffected)."""
+    name = request.config.getoption("--profile", default=None)
+    if not name:
+        return
+    reason = get_profile(name).xfail_reason(request.node.name.split("[")[0])
     if reason:
         request.node.add_marker(pytest.mark.xfail(reason=reason, strict=False, run=True))
