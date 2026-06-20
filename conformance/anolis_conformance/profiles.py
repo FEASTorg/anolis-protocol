@@ -34,6 +34,12 @@ if sys.version_info >= (3, 11):
 else:  # pragma: no cover - exercised only on 3.10
     import tomli as tomllib
 
+# The highest conformance level this harness actually implements + gates. A
+# manifest may not declare a level above this — doing so would silently run a
+# lower bar and report a misleading pass. Raise this only in the release that
+# ships the level's complete gating tests + selector.
+SUPPORTED_CONFORMANCE_LEVEL = 1
+
 
 @dataclass(frozen=True)
 class ProviderProfile:
@@ -94,6 +100,13 @@ def load_profile(path: Path) -> ProviderProfile:
     if isinstance(conformance_level, bool) or not isinstance(conformance_level, int) or conformance_level < 1:
         raise SystemExit(
             f"--provider-profile {path}: 'conformance_level' must be an integer >= 1"
+        )
+    if conformance_level > SUPPORTED_CONFORMANCE_LEVEL:
+        raise SystemExit(
+            f"--provider-profile {path}: conformance_level {conformance_level} is not "
+            f"implemented by this harness (max {SUPPORTED_CONFORMANCE_LEVEL}). Declaring it "
+            f"would run a lower bar and report a misleading pass — pin a harness release that "
+            f"gates level {conformance_level}."
         )
 
     waivers = data.get("waivers", {})

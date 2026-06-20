@@ -18,6 +18,11 @@ This document defines the **normative semantics** of the
 > invalidate lower-level providers; a plain "`ADPP v1` conformant" claim means
 > **at least L1**. Raising the *minimum* level required of all `ADPP v1`
 > providers is a breaking change — see `versioning.md`.
+>
+> When a provider both advertises `conformance_level` in Hello metadata **and**
+> declares one in its manifest, the two MUST agree, and the value MUST be a level
+> the verifier implements. A verifier MUST reject a declared level it does not
+> implement rather than silently testing a lower bar.
 
 ---
 
@@ -244,15 +249,17 @@ arguments, argument types, and declared numeric bounds.
 
 **Status codes by category:**
 
-- Unknown identifiers (device, function id, function name) → `CODE_NOT_FOUND`
-  (all levels).
-- **L1:** every other invalid input — wrong type, missing required argument, or a
-  value outside its declared bounds — → `CODE_INVALID_ARGUMENT`.
-- **[L2]** A value outside its declared bounds → `CODE_OUT_OF_RANGE` (a refinement
-  of the L1 mapping); all other invalid inputs remain `CODE_INVALID_ARGUMENT`.
-
-A single provider satisfies exactly one of the two bound mappings, determined by
-its conformance level — they do not both apply at once.
+- An unknown **device** identifier, or the **selected function identifier** (the
+  `function_id` when nonzero, otherwise the resolved `function_name`), →
+  `CODE_NOT_FOUND` (all levels). When `function_id` is nonzero, `function_name`
+  is not selected and is not validated (it is ignored per §6.2).
+- A value outside its declared bounds:
+  - **L1:** → `CODE_INVALID_ARGUMENT` **or** `CODE_OUT_OF_RANGE`.
+  - **[L2]:** → MUST be `CODE_OUT_OF_RANGE`.
+  L2 only *tightens* the L1 choice, so an L2 provider also satisfies L1 — the
+  levels stay cumulative.
+- Every other invalid input (wrong type, missing required argument) →
+  `CODE_INVALID_ARGUMENT` (all levels).
 
 **Numeric value rules ([L2]):**
 
@@ -266,12 +273,13 @@ its conformance level — they do not both apply at once.
 
 ### 8.4 Deadlines
 
-`CallRequest.deadline` is an optional absolute deadline. A provider advertises
-whether it honors deadlines via the Hello metadata key `supports_deadlines`
-(`"true"` / `"false"`; **absent ⇒ `"false"`**). A provider that does not
-advertise support MAY ignore `deadline` (best-effort). When advertised
-(`supports_deadlines="true"`) the deadline applies to **every** call the provider
-accepts, and:
+Deadline support is the **[L2]** deadline capability contract. A provider
+advertises it via the Hello metadata key `supports_deadlines` (`"true"` /
+`"false"`; **absent ⇒ `"false"`**). At L1, deadline behavior is unconstrained: a
+provider MAY ignore `CallRequest.deadline` entirely, and `supports_deadlines`
+carries no obligation. An L2 provider that advertises `supports_deadlines="true"`
+takes on the contract below; the deadline then applies to **every** call it
+accepts:
 
 - **[L2]** A malformed `deadline` (not a valid `google.protobuf.Timestamp`) →
   `CODE_INVALID_ARGUMENT`.
