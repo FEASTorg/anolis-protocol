@@ -4,6 +4,43 @@ All notable changes to the Anolis Device Provider Protocol (ADPP) are documented
 
 ## [Unreleased]
 
+## [v1.4.0] — 2026-06-21
+
+### Added
+
+- **Conformance level 2 (opt-in).** The harness gains a cumulative,
+  provider-declared level model: a provider names its level in its manifest
+  (`conformance_level`, default `1`) and SHOULD advertise it in Hello metadata.
+  Tests are gated by a `conformance_level(n)` marker; a provider runs the
+  requirements **up to** the level it declares, and a declared level above what
+  the harness implements is rejected. Introducing L2 does not affect existing L1
+  providers.
+  - **[L2] semantics** (`docs/semantics.md`, tagged `[L2]`): a request before
+    Hello → `CODE_FAILED_PRECONDITION` (§3.2); declared numeric bounds are
+    inclusive and a value outside them → `CODE_OUT_OF_RANGE`, a non-finite double
+    → `CODE_INVALID_ARGUMENT` (§8.3); deadlines advertised via the
+    `supports_deadlines` Hello key — expired → `CODE_DEADLINE_EXCEEDED`, malformed
+    → `CODE_INVALID_ARGUMENT` (§8.4); every `CODE_OK` `SignalValue` carries a valid
+    `timestamp` and a defined non-`UNSPECIFIED` `quality` (§7.1).
+  - **L2 conformance tests** (`test_l2.py`) covering all of the above, with
+    valid-argument synthesis and bound isolation; an L1 provider never runs them.
+- **Bucket-A positive-call coverage** (L1): a no-required-argument call (by id and
+  by name) is accepted; a missing required argument → `CODE_INVALID_ARGUMENT`;
+  `function_id` is preferred over `function_name` when both are given (§6.2).
+
+### Changed
+
+- `docs/versioning.md`: documents that **semantic** tightening (a stricter `MUST`
+  with the wire unchanged) is a conformance break, handled via opt-in conformance
+  levels — introducing a level is MINOR, raising the global minimum is breaking.
+  `README.md` and `docs/index.md` reconciled to one wire-vs-semantic model.
+
+### Notes
+
+- **No wire-contract change** — the proto schema is identical to v1.3.0. This is an
+  additive harness + semantics release; the new conformance level is opt-in, so no
+  existing (L1) provider is affected. Versioned MINOR.
+
 ## [v1.3.0] — 2026-06-20
 
 ### Added
