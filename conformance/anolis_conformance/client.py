@@ -239,7 +239,7 @@ class AdppClient:
         function_id: int = 0,
         function_name: str | None = None,
         args: dict[str, Any] | None = None,
-        deadline_epoch: float | None = None,
+        deadline: tuple[int, int] | None = None,
     ) -> Any:
         req = self.protocol.Request(request_id=self._request_id())
         req.call.device_id = device_id
@@ -248,8 +248,10 @@ class AdppClient:
             req.call.function_name = function_name
         for key, value in (args or {}).items():
             req.call.args[key].CopyFrom(value)
-        if deadline_epoch is not None:
-            req.call.deadline.seconds = int(deadline_epoch)  # marks deadline present
+        if deadline is not None:
+            # (seconds, nanos) set verbatim — callers may pass a malformed value
+            # (e.g. nanos out of range) on purpose to test validation.
+            req.call.deadline.seconds, req.call.deadline.nanos = deadline
         return self.send_request(req)
 
     def get_health(self) -> Any:

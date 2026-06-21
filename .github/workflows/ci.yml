@@ -99,9 +99,11 @@ jobs:
           printf 'provider_name = "p"\nconformance_level = 2\n' > /tmp/l2.toml
           n1="$(anolis-adpp-conformance --provider-bin "$real_bin" --provider-config "$real_cfg" --provider-profile /tmp/l1.toml --collect-only -q -p no:cacheprovider 2>/dev/null | grep -c test_l2)"
           n2="$(anolis-adpp-conformance --provider-bin "$real_bin" --provider-config "$real_cfg" --provider-profile /tmp/l2.toml --collect-only -q -p no:cacheprovider 2>/dev/null | grep -c test_l2)"
+          cum="$(anolis-adpp-conformance --provider-bin "$real_bin" --provider-config "$real_cfg" --provider-profile /tmp/l2.toml --collect-only -q -p no:cacheprovider 2>/dev/null | grep -c test_adpp_core)"
           [ "$n1" -eq 0 ] || fail "L1 manifest must not collect L2 tests (collected $n1)"
           [ "$n2" -gt 0 ] || fail "L2 manifest must collect L2 tests (collected $n2)"
-          echo "OK: misconfig nonzero; unsupported level rejected; level gating L1=$n1 L2=$n2"
+          [ "$cum" -gt 0 ] || fail "L2 manifest must still collect L1 tests — levels are cumulative (collected $cum)"
+          echo "OK: misconfig nonzero; unsupported level rejected; gating L1=$n1 L2=$n2 cumulative-L1=$cum"
       # NOTE: cross-provider conformance (running the harness against a real
       # provider binary) lives in each PROVIDER repo's CI — the provider pulls
       # this pinned wheel + supplies its own --provider-profile. The contract

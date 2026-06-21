@@ -240,18 +240,44 @@ def test_selftest_malformed_validator_accepts_error_status(make_client, codes) -
 # --- L2 SignalValue check (the real §7.1 validator the L2 suite runs) ---
 
 
-def test_selftest_signalvalues_l2_validator(protocol) -> None:
+def _good_signal(protocol):
     resp = protocol.Response()
     sv = resp.read_signals.values.add()
     sv.signal_id = "temp"
-    # missing timestamp + UNSPECIFIED quality -> rejected
+    sv.timestamp.seconds = 1
+    sv.quality = protocol.SignalValue.QUALITY_OK
+    return resp, sv
+
+
+def test_selftest_signalvalues_l2_validator(protocol) -> None:
+    # missing timestamp -> rejected
+    resp = protocol.Response()
+    sv = resp.read_signals.values.add()
+    sv.signal_id = "temp"
     with pytest.raises(ConformanceFailure):
         assert_signalvalues_l2(resp)
-    sv.timestamp.seconds = 1  # present now, but quality still UNSPECIFIED
+    sv.timestamp.seconds = 1  # present, but quality still UNSPECIFIED
     with pytest.raises(ConformanceFailure):
         assert_signalvalues_l2(resp)
-    sv.quality = protocol.SignalValue.QUALITY_OK  # timestamp + defined quality -> accepted
-    assert_signalvalues_l2(resp)
+    # a good value passes
+    good, _ = _good_signal(protocol)
+    assert_signalvalues_l2(good)
+
+
+def test_selftest_signalvalues_l2_rejects_bad_quality(protocol) -> None:
+    resp, sv = _good_signal(protocol)
+    sv.quality = 999  # not a defined Quality enum value
+    with pytest.raises(ConformanceFailure):
+        assert_signalvalues_l2(resp)
+
+
+@pytest.mark.parametrize("nanos,seconds", [(1_000_000_000, 1), (-1, 1), (0, 99_999_999_999_999)])
+def test_selftest_signalvalues_l2_rejects_bad_timestamp(protocol, nanos, seconds) -> None:
+    resp, sv = _good_signal(protocol)
+    sv.timestamp.nanos = nanos
+    sv.timestamp.seconds = seconds
+    with pytest.raises(ConformanceFailure):
+        assert_signalvalues_l2(resp)
 
 
 # --- provider-profile loader (the generic schema; ships no implementer data) ---

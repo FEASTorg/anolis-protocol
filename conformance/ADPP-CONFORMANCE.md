@@ -124,13 +124,32 @@ provider repo, the protocol package never re-releases for a provider-specific
 exception. Each waiver reason should carry an issue link (and ideally an
 owner/expiry).
 
+## Conformance levels
+
+Tests are tagged by conformance level (see `docs/semantics.md` *Conformance
+levels*). The harness runs requirements **up to** the level the provider declares
+in its `conformance.toml` (`conformance_level`, default 1):
+
+- **L1** (default): core ADPP, the framed-stdio profile, and executable-profile
+  conventions.
+- **L2** (`test_l2.py`, opt-in): pre-Hello → `FAILED_PRECONDITION` (every request
+  kind); bounds → `OUT_OF_RANGE` (inclusive; all numeric types) and non-finite →
+  `INVALID_ARGUMENT`; deadlines; OK-read value `timestamp`/`quality`;
+  Hello↔manifest level agreement.
+
+**L2 behavior the harness does NOT exercise generically** — verify manually or
+with a provider-specific fixture; the suite does not claim these:
+
+- a deadline expiring *during* synchronous execution (needs a deterministic slow
+  function), and proving a rejected call produced *no side effects*;
+- on a provider whose mock backend returns `UNAVAILABLE`, the bounds / non-finite
+  / deadline tests skip — they need an `OK` call to isolate argument validation.
+
 ## Not yet covered (follow-ups, #25)
 
-Positive calls (by id and name) with valid args; argument type/bound validation;
-deadline behavior; typed-value/quality/timestamp assertions; full readiness
-diagnostics; pre-Hello handling; and capability id/name-convention checks.
-Provider-side concerns — each provider's `provider.conformance` CI lane (pulling
-this pinned wheel), its `conformance.toml`/mock config, and version-pin alignment
-— are tracked in the respective provider repos, plus an org-level cross-version
+Full readiness diagnostics and capability id/name-convention checks. Provider-side
+concerns — each provider's `provider.conformance` CI lane (pulling this pinned
+wheel), its `conformance.toml`/mock config, and version-pin alignment — are
+tracked in the respective provider repos, plus an org-level cross-version
 compatibility matrix. (ADPP is currently implemented by `anolis-provider-sim`,
 `-ezo`, and `-bread`.)
