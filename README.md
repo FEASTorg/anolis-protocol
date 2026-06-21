@@ -36,7 +36,7 @@ The cross-provider **conformance harness** (the `[conformance]` extra + the
 (releases up to and including v1.2.0 predate it):
 
 ```sh
-pip install "anolis-protocol[conformance] @ https://github.com/anolishq/anolis-protocol/releases/download/v1.3.0/anolis_protocol-1.3.0-py3-none-any.whl"
+pip install "anolis-protocol[conformance] @ https://github.com/anolishq/anolis-protocol/releases/download/v1.4.0/anolis_protocol-1.4.0-py3-none-any.whl"
 # or, from a checkout: pip install ".[conformance]"
 ```
 
