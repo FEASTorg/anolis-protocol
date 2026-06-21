@@ -23,6 +23,40 @@ def assert_status_present(response) -> None:
         raise ConformanceFailure("response is missing the required Status (semantics.md §10)")
 
 
+# QUALITY_UNSPECIFIED is 0 in the proto enum (proto3 default).
+_QUALITY_UNSPECIFIED = 0
+# Valid google.protobuf.Timestamp range (0001-01-01 .. 9999-12-31, UTC).
+_TS_MIN_SECONDS = -62135596800
+_TS_MAX_SECONDS = 253402300799
+
+
+def assert_signalvalues_l2(read_response) -> None:
+    """semantics.md §7.1 [L2]: in a CODE_OK ReadSignalsResponse every SignalValue
+    MUST set a **valid** ``timestamp`` and a ``quality`` that is a **defined**
+    enum value other than ``QUALITY_UNSPECIFIED``. Caller checks the status is OK
+    first."""
+    for value in read_response.read_signals.values:
+        sid = value.signal_id
+        if not value.HasField("timestamp"):
+            raise ConformanceFailure(f"signal {sid!r}: [L2] requires a timestamp on OK values")
+        ts = value.timestamp
+        if not (0 <= ts.nanos <= 999_999_999):
+            raise ConformanceFailure(
+                f"signal {sid!r}: timestamp.nanos {ts.nanos} is not in [0, 1e9)"
+            )
+        if not (_TS_MIN_SECONDS <= ts.seconds <= _TS_MAX_SECONDS):
+            raise ConformanceFailure(
+                f"signal {sid!r}: timestamp.seconds {ts.seconds} is outside the valid range"
+            )
+        valid_qualities = set(value.DESCRIPTOR.fields_by_name["quality"].enum_type.values_by_number)
+        if value.quality not in valid_qualities:
+            raise ConformanceFailure(
+                f"signal {sid!r}: quality {value.quality} is not a value defined by the schema"
+            )
+        if value.quality == _QUALITY_UNSPECIFIED:
+            raise ConformanceFailure(f"signal {sid!r}: quality must not be QUALITY_UNSPECIFIED")
+
+
 def _defined_error_codes(codes: SimpleNamespace) -> set[int]:
     """Every status code the proto enum defines, minus OK and UNSPECIFIED."""
     return set(vars(codes).values()) - {codes.OK, codes.UNSPECIFIED}

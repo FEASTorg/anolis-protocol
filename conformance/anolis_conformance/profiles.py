@@ -38,7 +38,7 @@ else:  # pragma: no cover - exercised only on 3.10
 # manifest may not declare a level above this — doing so would silently run a
 # lower bar and report a misleading pass. Raise this only in the release that
 # ships the level's complete gating tests + selector.
-SUPPORTED_CONFORMANCE_LEVEL = 1
+SUPPORTED_CONFORMANCE_LEVEL = 2
 
 
 @dataclass(frozen=True)

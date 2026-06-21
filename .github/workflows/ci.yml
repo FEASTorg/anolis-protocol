@@ -89,7 +89,21 @@ jobs:
           out="$(anolis-adpp-conformance --provider-bin "$real_bin" --provider-config "$real_cfg" --provider-profile /tmp/bad-profile.toml -p no:cacheprovider 2>&1)"
           [ $? -ne 0 ] || fail "out-of-scope waiver (exit)"
           echo "$out" | grep -q "waivers may only target executable_profile tests" || fail "out-of-scope waiver fired for the wrong reason:\n$out"
-          echo "OK: every misconfiguration returned nonzero (waiver scope for the right reason)"
+          # A manifest may not declare a conformance level the harness does not implement.
+          printf 'provider_name = "p"\nconformance_level = 99\n' > /tmp/level99.toml
+          out2="$(anolis-adpp-conformance --provider-bin "$real_bin" --provider-config "$real_cfg" --provider-profile /tmp/level99.toml -p no:cacheprovider 2>&1)"
+          [ $? -ne 0 ] || fail "unsupported conformance_level (exit)"
+          echo "$out2" | grep -q "not implemented by this harness" || fail "unsupported level fired for the wrong reason:\n$out2"
+          # Level gating: an L1 manifest must NOT collect L2 tests; an L2 manifest must.
+          printf 'provider_name = "p"\nconformance_level = 1\n' > /tmp/l1.toml
+          printf 'provider_name = "p"\nconformance_level = 2\n' > /tmp/l2.toml
+          n1="$(anolis-adpp-conformance --provider-bin "$real_bin" --provider-config "$real_cfg" --provider-profile /tmp/l1.toml --collect-only -q -p no:cacheprovider 2>/dev/null | grep -c test_l2)"
+          n2="$(anolis-adpp-conformance --provider-bin "$real_bin" --provider-config "$real_cfg" --provider-profile /tmp/l2.toml --collect-only -q -p no:cacheprovider 2>/dev/null | grep -c test_l2)"
+          cum="$(anolis-adpp-conformance --provider-bin "$real_bin" --provider-config "$real_cfg" --provider-profile /tmp/l2.toml --collect-only -q -p no:cacheprovider 2>/dev/null | grep -c test_adpp_core)"
+          [ "$n1" -eq 0 ] || fail "L1 manifest must not collect L2 tests (collected $n1)"
+          [ "$n2" -gt 0 ] || fail "L2 manifest must collect L2 tests (collected $n2)"
+          [ "$cum" -gt 0 ] || fail "L2 manifest must still collect L1 tests — levels are cumulative (collected $cum)"
+          echo "OK: misconfig nonzero; unsupported level rejected; gating L1=$n1 L2=$n2 cumulative-L1=$cum"
       # NOTE: cross-provider conformance (running the harness against a real
       # provider binary) lives in each PROVIDER repo's CI — the provider pulls
       # this pinned wheel + supplies its own --provider-profile. The contract
