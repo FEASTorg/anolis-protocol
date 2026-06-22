@@ -16,6 +16,8 @@ import pytest
 from .checks import (
     ConformanceFailure,
     assert_controlled_malformed,
+    assert_function_ids_per_type_from_one,
+    assert_signal_ids_snake_case,
     assert_signalvalues_l2,
     assert_status_present,
 )
@@ -278,6 +280,37 @@ def test_selftest_signalvalues_l2_rejects_bad_timestamp(protocol, nanos, seconds
     sv.timestamp.seconds = seconds
     with pytest.raises(ConformanceFailure):
         assert_signalvalues_l2(resp)
+
+
+# --- capability-convention validators (executable profile §4) ---
+
+
+def _caps(protocol, *, signal_ids=(), function_ids=()):
+    caps = protocol.CapabilitySet()
+    for sid in signal_ids:
+        caps.signals.add().signal_id = sid
+    for fid in function_ids:
+        caps.functions.add().function_id = fid
+    return caps
+
+
+def test_selftest_signal_id_snake_case_validator(protocol) -> None:
+    # snake_case passes; empty set passes vacuously
+    assert_signal_ids_snake_case("d", _caps(protocol, signal_ids=["water_temp", "ph_value", "ch1"]))
+    assert_signal_ids_snake_case("d", _caps(protocol))
+    for bad in ("ph.value", "CamelCase", "Has_Upper", "1leading", "trailing-"):
+        with pytest.raises(ConformanceFailure):
+            assert_signal_ids_snake_case("d", _caps(protocol, signal_ids=[bad]))
+
+
+def test_selftest_function_id_per_type_validator(protocol) -> None:
+    # contiguous {1..N} passes (any order); empty set passes vacuously
+    assert_function_ids_per_type_from_one("d", _caps(protocol, function_ids=[1, 2, 3]))
+    assert_function_ids_per_type_from_one("d", _caps(protocol, function_ids=[3, 1, 2]))
+    assert_function_ids_per_type_from_one("d", _caps(protocol))
+    for bad in ([10], [1001, 1002, 1003], [0, 1], [1, 3], [2, 3]):
+        with pytest.raises(ConformanceFailure):
+            assert_function_ids_per_type_from_one("d", _caps(protocol, function_ids=bad))
 
 
 # --- provider-profile loader (the generic schema; ships no implementer data) ---

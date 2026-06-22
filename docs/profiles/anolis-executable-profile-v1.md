@@ -22,10 +22,18 @@ framed-stdio (transport) tests.
 
 ## 2. Readiness diagnostics
 
-- When the provider advertises `supports_wait_ready=true`, a `WaitReady` response
-  SHOULD report `init_time_ms` in its diagnostics — the key the runtime reads.
-- Additional diagnostics keys are allowed; the full standard key set is being
-  settled (see the conformance epic).
+When the provider advertises `supports_wait_ready=true`, a `WaitReady` response's
+`diagnostics` map uses this standard key set (all values are strings):
+
+| Key | Status | Meaning |
+| --- | --- | --- |
+| `init_time_ms` | **required** | Milliseconds spent initializing before ready — the key the runtime reads. Asserted by the harness (waivable). |
+| `ready` | recommended | `"true"` / `"false"` — readiness as a value, pending a typed `ready` field in `readiness.proto`. |
+| `device_count` | recommended | Number of devices the provider brought up. |
+| `provider_impl` | recommended | Provider implementation identifier (e.g. name + version), for diagnostics. |
+
+Provider-specific extra keys are allowed. Only `init_time_ms` is gated; the
+recommended keys are conventions, not asserted.
 
 ## 3. Process hygiene
 
@@ -34,7 +42,21 @@ framed-stdio (transport) tests.
   (stray bytes corrupt the frame stream — this is enforced by the framed-stdio
   profile, not waivable).
 
-## 4. Relationship to other documents
+## 4. Capability conventions
+
+Conventions for the capability surface (`CapabilitySet`) a device reports via
+`DescribeDevice`. These keep ids predictable across providers and a future SDK;
+they are conventions, not core ADPP, and are waivable.
+
+- **`signal_id` is snake_case** — matches `^[a-z][a-z0-9_]*$` (a lowercase letter
+  first, then lowercase letters, digits, underscores). No dots (`ph.value`), no
+  camelCase. Asserted by `test_signal_ids_snake_case`.
+- **`function_id` is per-type, numbered from 1** — within each device type the
+  function ids are the contiguous set `{1..N}` for N declared functions. Not a
+  global counter (`1001`, `1002`, …) and not an arbitrary value (`10`). Asserted
+  by `test_function_ids_per_type_from_one`.
+
+## 5. Relationship to other documents
 
 - `semantics.md` — core ADPP v1 (normative).
 - `profiles/framed-stdio-v1.md` — the stdio transport binding (normative).

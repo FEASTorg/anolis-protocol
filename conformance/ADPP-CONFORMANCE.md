@@ -73,9 +73,10 @@ not conflated):
    code), a hang, or an over-cap/malformed response is a **failure**.
 3. **Anolis provider executable profile** (`test_executable_profile.py`) — CLI
    surface (`--version`, `--check-config`), the WaitReady diagnostics the runtime
-   reads (`init_time_ms`), and process lifecycle. **These are Anolis conventions,
-   not ADPP requirements** — a binary can be ADPP-conformant and still diverge
-   here.
+   reads (`init_time_ms`), capability conventions (snake_case `signal_id`s,
+   per-type `function_id`s from 1), and process lifecycle. **These are Anolis
+   conventions, not ADPP requirements** — a binary can be ADPP-conformant and
+   still diverge here.
 
 Concurrency note: `semantics.md` allows concurrent processing and out-of-order
 responses (correlate by `request_id`). The runtime's one-in-flight serialization
@@ -145,11 +146,14 @@ with a provider-specific fixture; the suite does not claim these:
 - on a provider whose mock backend returns `UNAVAILABLE`, the bounds / non-finite
   / deadline tests skip — they need an `OK` call to isolate argument validation.
 
-## Not yet covered (follow-ups, #25)
+## Provider-side concerns (#25)
 
-Full readiness diagnostics and capability id/name-convention checks. Provider-side
-concerns — each provider's `provider.conformance` CI lane (pulling this pinned
-wheel), its `conformance.toml`/mock config, and version-pin alignment — are
-tracked in the respective provider repos, plus an org-level cross-version
-compatibility matrix. (ADPP is currently implemented by `anolis-provider-sim`,
-`-ezo`, and `-bread`.)
+Each provider's `provider.conformance` CI lane (pulling this pinned wheel), its
+`conformance.toml`/mock config, and version-pin alignment are tracked in the
+respective provider repos. An org-level cross-version compatibility matrix
+(released protocol × released provider, non-gating) runs in `anolishq/.github`.
+(ADPP is currently implemented by `anolis-provider-sim`, `-ezo`, and `-bread`.)
+
+The readiness diagnostics key set and the capability id/name conventions are now
+settled in `docs/profiles/anolis-executable-profile-v1.md` and asserted here
+(`test_signal_ids_snake_case`, `test_function_ids_per_type_from_one`).

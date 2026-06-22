@@ -15,11 +15,22 @@ import subprocess
 
 import pytest
 
+from .checks import assert_function_ids_per_type_from_one, assert_signal_ids_snake_case
 from .client import AdppClient
 
 # Every test here is an Anolis executable-profile convention — the only tests a
 # provider's --provider-profile waiver is permitted to xfail.
 pytestmark = pytest.mark.executable_profile
+
+
+def _device_capabilities(client: AdppClient):
+    """[(device_id, CapabilitySet)] for every device the provider exposes."""
+    client.hello()
+    out = []
+    for d in client.list_devices().list_devices.devices:
+        caps = client.describe_device(d.device_id).describe_device.capabilities
+        out.append((d.device_id, caps))
+    return out
 
 
 # ---- readiness diagnostics ---------------------------------------------
@@ -33,6 +44,25 @@ def test_wait_ready_reports_init_time_ms(client: AdppClient, codes, status_text)
     assert wr.status.code == codes.OK, status_text(wr)
     diags = dict(wr.wait_ready.diagnostics)
     assert "init_time_ms" in diags, f"wait_ready should report init_time_ms; got {sorted(diags)}"
+
+
+# ---- capability conventions ---------------------------------------------
+def test_signal_ids_snake_case(client: AdppClient) -> None:
+    # Convention: signal_id is snake_case (see the executable profile, §4).
+    caps = _device_capabilities(client)
+    if not caps:
+        pytest.skip("provider exposes no devices")
+    for device_id, capabilities in caps:
+        assert_signal_ids_snake_case(device_id, capabilities)
+
+
+def test_function_ids_per_type_from_one(client: AdppClient) -> None:
+    # Convention: each device's function_ids are per-type {1..N} (see §4).
+    caps = _device_capabilities(client)
+    if not caps:
+        pytest.skip("provider exposes no devices")
+    for device_id, capabilities in caps:
+        assert_function_ids_per_type_from_one(device_id, capabilities)
 
 
 # ---- process hygiene ----------------------------------------------------

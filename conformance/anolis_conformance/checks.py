@@ -7,6 +7,7 @@ a reimplementation that could drift from what the suite actually enforces.
 
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 
 from . import spec
@@ -55,6 +56,35 @@ def assert_signalvalues_l2(read_response) -> None:
             )
         if value.quality == _QUALITY_UNSPECIFIED:
             raise ConformanceFailure(f"signal {sid!r}: quality must not be QUALITY_UNSPECIFIED")
+
+
+_SNAKE_CASE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def assert_signal_ids_snake_case(device_id: str, capabilities) -> None:
+    """Anolis executable profile — capability convention: every ``signal_id`` is
+    snake_case (``^[a-z][a-z0-9_]*$``: lowercase letter first, then lowercase
+    letters / digits / underscores; no dots, no camelCase). A *convention*, not
+    core ADPP — see ``docs/profiles/anolis-executable-profile-v1.md``; waivable."""
+    bad = [s.signal_id for s in capabilities.signals if not _SNAKE_CASE.match(s.signal_id)]
+    if bad:
+        raise ConformanceFailure(
+            f"device {device_id!r}: signal_id(s) must be snake_case "
+            f"(^[a-z][a-z0-9_]*$); offending: {bad}"
+        )
+
+
+def assert_function_ids_per_type_from_one(device_id: str, capabilities) -> None:
+    """Anolis executable profile — capability convention: a device's
+    ``function_id``s are numbered per device type from 1, i.e. the contiguous set
+    ``{1..N}`` for N declared functions (not a global counter like 1001+, not an
+    arbitrary value like 10). A *convention*, not core ADPP — see
+    ``docs/profiles/anolis-executable-profile-v1.md``; waivable."""
+    ids = sorted(f.function_id for f in capabilities.functions)
+    if ids and ids != list(range(1, len(ids) + 1)):
+        raise ConformanceFailure(
+            f"device {device_id!r}: function_ids should be per-type {{1..{len(ids)}}}; got {ids}"
+        )
 
 
 def _defined_error_codes(codes: SimpleNamespace) -> set[int]:
