@@ -193,10 +193,14 @@ In v1:
 
 ### 7.2 Default signals
 
-Each provider MUST define, per device type, a **stable subset of signals**
-designated as **default signals**.
+For any device type that declares at least one signal, a provider MUST define a
+**stable, non-empty subset of signals** designated as **default signals**.
 
 - Default signals are returned when `ReadSignalsRequest.signal_ids` is empty.
+- A default read (empty `signal_ids`) on a device that declares signals MUST
+  therefore return a non-empty set of values whose `signal_id`s are a subset of
+  the declared signals. (The subset is provider-curated and need not be the full
+  declared set.)
 - Default signals SHOULD represent low-cost, routinely useful telemetry
   suitable for dashboards and polling loops.
 - Expensive or rarely-used signals SHOULD NOT be default.
@@ -234,6 +238,13 @@ ADPP v1 does not define an operation lifecycle API. If async calls are used,
 providers MUST document how results are observed (typically via signals).
 
 (Recommended for v1: synchronous execution.)
+
+When a function declares results (`FunctionSpec.results`), a **synchronous**
+successful call (`CODE_OK` with no `operation_id`) MUST populate
+`CallResponse.results`, keyed by the declared `ArgSpec.name`s — a provider that
+declares results MUST NOT return an empty result map for a completed call.
+Asynchronous acceptance (`CODE_OK` with `operation_id` set) observes results
+later (per above), so it carries no such obligation.
 
 ### 8.2 Idempotency
 

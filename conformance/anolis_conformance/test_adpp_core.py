@@ -99,6 +99,39 @@ def test_read_signals_response_shape(ready_client: AdppClient, codes, status_tex
             assert value.HasField("value"), f"signal {value.signal_id} missing a value"
 
 
+def test_default_read_returns_declared_subset(ready_client: AdppClient, codes, status_text) -> None:
+    # semantics.md §7.2: for a device type declaring >=1 signal, an empty-`signal_ids`
+    # read returns the DEFAULT signal set — a non-empty subset of the declared
+    # signals. The set is provider-curated, so this asserts "non-empty ⊆ declared",
+    # NOT an exact membership. (This is T0.2: a provider that returns nothing on a
+    # default read fails §7.2.)
+    checked = 0
+    for d in ready_client.list_devices().list_devices.devices:
+        caps = ready_client.describe_device(d.device_id).describe_device.capabilities
+        declared = {s.signal_id for s in caps.signals}
+        if not declared:
+            continue
+        resp = ready_client.read_signals(d.device_id)  # empty signal_ids => default set
+        # A mock backend may legitimately report UNAVAILABLE; the set contract is
+        # only observable on an OK read.
+        if resp.status.code == codes.UNAVAILABLE:
+            continue
+        assert resp.status.code == codes.OK, (
+            f"default read must be OK or UNAVAILABLE; got {status_text(resp)}"
+        )
+        default_ids = {v.signal_id for v in resp.read_signals.values}
+        assert default_ids, (
+            f"device {d.device_id} declares signals but a default read returned none "
+            "(§7.2 requires a non-empty default signal set)"
+        )
+        assert default_ids <= declared, (
+            f"default read returned undeclared signals {default_ids - declared}"
+        )
+        checked += 1
+    if checked == 0:
+        pytest.skip("no readable device declares signals")
+
+
 def test_read_unknown_signal_consistent(ready_client: AdppClient, codes, status_text) -> None:
     # semantics.md 7.4: a provider MUST choose ONE consistent behavior for an
     # unknown signal id — either fail CODE_NOT_FOUND, OR return partial results
@@ -177,6 +210,49 @@ def _first_device_with_functions(ready_client: AdppClient):
         if caps.functions:
             return d.device_id, list(caps.functions)
     return None, []
+
+
+def _devices_with_result_functions(ready_client: AdppClient):
+    """Yield (device_id, FunctionSpec) for every no-required-arg function that
+    declares results. No-required-arg so the call can be made safely."""
+    for d in ready_client.list_devices().list_devices.devices:
+        caps = ready_client.describe_device(d.device_id).describe_device.capabilities
+        for fn in caps.functions:
+            if fn.results and not any(a.required for a in fn.args):
+                yield d.device_id, fn
+
+
+def test_call_declared_results_are_populated(ready_client: AdppClient, codes, status_text) -> None:
+    # semantics.md §8.1 + call.proto: CallResponse.results is a map keyed by
+    # ArgSpec.name from FunctionSpec.results. A SYNCHRONOUS successful call to a
+    # function that DECLARES results MUST populate them — this is T0.6: declare
+    # *and* populate, not declare-then-return-empty. An async-accepted call
+    # (CODE_OK with operation_id set, §8.1) observes results later via signals and
+    # is exempt. We try every candidate function and assert on the first that
+    # reaches a synchronous OK (a mock backend may report UNAVAILABLE for some).
+    candidates = list(_devices_with_result_functions(ready_client))
+    if not candidates:
+        pytest.skip("no zero-required-arg function declares results")
+    for dev, fn in candidates:
+        resp = ready_client.call(dev, function_id=fn.function_id)
+        if resp.status.code == codes.UNAVAILABLE:
+            continue  # mock backend cannot actuate this one; try the next
+        assert resp.status.code == codes.OK, (
+            f"valid call to {fn.name} must be accepted; got {status_text(resp)}"
+        )
+        if resp.call.operation_id:
+            continue  # accepted asynchronously; results observed via signals (§8.1)
+        declared = {a.name for a in fn.results}
+        returned = set(resp.call.results.keys())
+        assert returned, (
+            f"function {fn.name} declares results {sorted(declared)} but CallResponse.results "
+            "is empty (§8.1: a synchronous successful call must populate declared results)"
+        )
+        assert returned <= declared, (
+            f"CallResponse.results contains undeclared keys {returned - declared}"
+        )
+        return
+    pytest.skip("no result-declaring function reached a synchronous OK call")
 
 
 def test_call_valid_no_arg_function_accepted(ready_client: AdppClient, codes, status_text) -> None:
