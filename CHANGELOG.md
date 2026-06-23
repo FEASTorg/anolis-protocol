@@ -4,6 +4,41 @@ All notable changes to the Anolis Device Provider Protocol (ADPP) are documented
 
 ## [Unreleased]
 
+## [v1.5.0] — 2026-06-23
+
+No wire/proto changes from v1.4.0 — this release is conformance-harness and
+specification only. Providers upgrade by bumping the harness pin; generated code
+is unaffected.
+
+### Added
+
+- **Bucket C — capability conventions** (executable-profile, **waivable**). The
+  executable profile now settles two naming conventions, asserted by the harness
+  and waivable via a provider's profile:
+  - **`signal_id` is snake_case** (`^[a-z][a-z0-9_]*$`) — `test_signal_ids_snake_case`.
+  - **`function_id` is per-type, numbered from 1** — within each device type the
+    declared function ids form the contiguous set `{1..N}` —
+    `test_function_ids_per_type_from_one`.
+- **WaitReady standard diagnostics key set.** When a provider advertises
+  `supports_wait_ready=true`, the `WaitReady` response `diagnostics` map uses a
+  standard key set; `init_time_ms` is **required and gated** (waivable, the key
+  the runtime reads), other keys are recommended conventions. (#39)
+- **Gated default-signal-set and call-results assertions** (closes the
+  harness-coverage item #41):
+  - **§7.2** — an empty-`signal_ids` read on a device that declares signals must
+    return a non-empty subset of the declared signals
+    (`test_default_read_returns_declared_subset`).
+  - **§8.1** — a synchronous successful call to a function that declares results
+    must populate `CallResponse.results`
+    (`test_call_declared_results_are_populated`). (#42)
+
+### Changed
+
+- **`docs/semantics.md` clarifications** backing the new gates (no behavior
+  change for compliant providers): §7.2 now requires a *non-empty* default
+  signal set for any device type declaring ≥1 signal; §8.1 now requires a
+  synchronous successful call to populate its declared results. (#42)
+
 ## [v1.4.0] — 2026-06-21
 
 ### Added
