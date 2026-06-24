@@ -4,6 +4,19 @@ All notable changes to the Anolis Device Provider Protocol (ADPP) are documented
 
 ## [Unreleased]
 
+### Added
+
+- **§7.3 freshness-hint gate** (core ADPP, non-waivable). `min_timestamp` is
+  clarified as a hint that constrains *quality*, not *success*: a provider MUST
+  NOT turn an otherwise-readable signal into an error (notably
+  `CODE_DEADLINE_EXCEEDED`) solely because the freshness hint is unmet — it
+  returns `CODE_OK` with best-available values (`test_min_timestamp_hint_is_not_fatal`,
+  validated hermetically by `test_selftest_freshness_hint_validator`). No
+  wire/proto change. Closes a silent-divergence surface ahead of the
+  provider-SDK extraction (anolis-protocol#47); a provider that errored on an
+  unmet hint becomes non-conformant when it bumps to the harness release
+  carrying this test.
+
 ## [v1.5.0] — 2026-06-23
 
 No wire/proto changes from v1.4.0 — this release is conformance-harness and

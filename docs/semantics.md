@@ -214,6 +214,14 @@ If `ReadSignalsRequest.min_timestamp` is provided:
 - Providers SHOULD attempt to satisfy the freshness requirement.
 - If not feasible, providers SHOULD return the best available values and
   indicate staleness via `quality` and/or `Status.details`.
+- `min_timestamp` is a **hint that constrains quality, not success**: a provider
+  MUST NOT treat an unmet freshness hint as a hard deadline. An otherwise-
+  readable signal MUST NOT, on account of the hint alone, be turned into an error
+  response (notably `CODE_DEADLINE_EXCEEDED`); the read returns `CODE_OK` with the
+  best available values. (A genuine read failure may still return
+  `CODE_UNAVAILABLE` etc.) *(Clarification: previously unstated; a provider that
+  returned an error solely because the hint was unmet is non-conformant under
+  this rule.)*
 
 ### 7.4 Missing signals
 

@@ -225,11 +225,21 @@ class AdppClient:
         req.describe_device.device_id = device_id
         return self.send_request(req)
 
-    def read_signals(self, device_id: str, signal_ids: Sequence[str] | None = None) -> Any:
+    def read_signals(
+        self,
+        device_id: str,
+        signal_ids: Sequence[str] | None = None,
+        *,
+        min_timestamp: tuple[int, int] | None = None,
+    ) -> Any:
         req = self.protocol.Request(request_id=self._request_id())
         req.read_signals.device_id = device_id
         if signal_ids:
             req.read_signals.signal_ids.extend(signal_ids)
+        if min_timestamp is not None:
+            seconds, nanos = min_timestamp
+            req.read_signals.min_timestamp.seconds = seconds
+            req.read_signals.min_timestamp.nanos = nanos
         return self.send_request(req)
 
     def call(

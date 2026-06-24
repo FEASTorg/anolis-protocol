@@ -6,10 +6,12 @@ permitted behavior.
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from . import spec
-from .checks import assert_status_present
+from .checks import assert_freshness_hint_not_fatal, assert_status_present
 from .client import AdppClient
 
 
@@ -127,6 +129,35 @@ def test_default_read_returns_declared_subset(ready_client: AdppClient, codes, s
         assert default_ids <= declared, (
             f"default read returned undeclared signals {default_ids - declared}"
         )
+        checked += 1
+    if checked == 0:
+        pytest.skip("no readable device declares signals")
+
+
+def test_min_timestamp_hint_is_not_fatal(ready_client: AdppClient, codes, status_text) -> None:
+    # semantics.md §7.3: `ReadSignalsRequest.min_timestamp` is a best-effort
+    # freshness HINT. A provider that cannot satisfy it MUST return best-available
+    # values (CODE_OK) — indicating staleness via quality/Status.details — and MUST
+    # NOT turn an otherwise-readable signal into an error (notably
+    # CODE_DEADLINE_EXCEEDED). We use a min_timestamp an hour in the future, which
+    # no real reading can satisfy, so the hint is always unmet.
+    future = (int(time.time()) + 3600, 0)
+    checked = 0
+    for d in ready_client.list_devices().list_devices.devices:
+        caps = ready_client.describe_device(d.device_id).describe_device.capabilities
+        if not caps.signals:
+            continue
+        # Establish that the device is readable at all without the hint; a mock
+        # backend may report UNAVAILABLE, in which case the contract is unobservable.
+        base = ready_client.read_signals(d.device_id)
+        if base.status.code == codes.UNAVAILABLE:
+            continue
+        assert base.status.code == codes.OK, (
+            f"baseline (hint-free) read must be OK or UNAVAILABLE; got {status_text(base)}"
+        )
+        resp = ready_client.read_signals(d.device_id, min_timestamp=future)
+        # The unmet freshness hint must not, by itself, fail the read.
+        assert_freshness_hint_not_fatal(resp, codes)
         checked += 1
     if checked == 0:
         pytest.skip("no readable device declares signals")
