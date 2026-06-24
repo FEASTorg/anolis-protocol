@@ -16,6 +16,7 @@ import pytest
 from .checks import (
     ConformanceFailure,
     assert_controlled_malformed,
+    assert_freshness_hint_not_fatal,
     assert_function_ids_per_type_from_one,
     assert_signal_ids_snake_case,
     assert_signalvalues_l2,
@@ -280,6 +281,23 @@ def test_selftest_signalvalues_l2_rejects_bad_timestamp(protocol, nanos, seconds
     sv.timestamp.seconds = seconds
     with pytest.raises(ConformanceFailure):
         assert_signalvalues_l2(resp)
+
+
+# --- freshness-hint validator (the real §7.3 check the core suite runs) ---
+
+
+def test_selftest_freshness_hint_validator(protocol, codes) -> None:
+    # §7.3: an unmet min_timestamp hint must not be fatal. OK / UNAVAILABLE pass;
+    # any error code (notably DEADLINE_EXCEEDED) is rejected.
+    for accepted in ("CODE_OK", "CODE_UNAVAILABLE"):
+        resp = protocol.Response()
+        resp.status.code = protocol.Status.Code.Value(accepted)
+        assert_freshness_hint_not_fatal(resp, codes)  # must NOT raise
+    for rejected in ("CODE_DEADLINE_EXCEEDED", "CODE_INTERNAL", "CODE_FAILED_PRECONDITION"):
+        resp = protocol.Response()
+        resp.status.code = protocol.Status.Code.Value(rejected)
+        with pytest.raises(ConformanceFailure):
+            assert_freshness_hint_not_fatal(resp, codes)
 
 
 # --- capability-convention validators (executable profile §4) ---

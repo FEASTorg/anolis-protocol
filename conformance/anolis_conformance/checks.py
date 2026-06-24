@@ -58,6 +58,25 @@ def assert_signalvalues_l2(read_response) -> None:
             raise ConformanceFailure(f"signal {sid!r}: quality must not be QUALITY_UNSPECIFIED")
 
 
+def assert_freshness_hint_not_fatal(read_response, codes: SimpleNamespace) -> None:
+    """semantics.md §7.3: ``ReadSignalsRequest.min_timestamp`` is a best-effort
+    freshness **hint**, not a hard deadline. A provider that cannot satisfy it
+    MUST return the best available values (``CODE_OK``) and indicate staleness via
+    ``quality``/``Status.details`` — it MUST NOT, by itself, turn an otherwise-
+    readable signal into an error (notably ``CODE_DEADLINE_EXCEEDED``). A genuine
+    read failure (``CODE_UNAVAILABLE``) is unrelated and exempt; the caller first
+    establishes that a hint-free read of the same device succeeds."""
+    code = read_response.status.code
+    if code in (codes.OK, codes.UNAVAILABLE):
+        return
+    name = next((n for n, v in vars(codes).items() if v == code), str(code))
+    raise ConformanceFailure(
+        f"a read with min_timestamp set returned status CODE_{name} — §7.3 freshness is a "
+        "best-effort hint that constrains *quality*, not *success*: return best-available "
+        "values (CODE_OK) with QUALITY_STALE, not an error such as CODE_DEADLINE_EXCEEDED"
+    )
+
+
 _SNAKE_CASE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
