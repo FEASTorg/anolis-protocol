@@ -4,6 +4,8 @@ All notable changes to the Anolis Device Provider Protocol (ADPP) are documented
 
 ## [Unreleased]
 
+## [v1.6.0] — 2026-06-24
+
 ### Added
 
 - **§7.3 freshness-hint gate** (core ADPP, non-waivable). `min_timestamp` is
