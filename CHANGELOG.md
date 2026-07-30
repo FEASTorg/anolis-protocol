@@ -4,6 +4,24 @@ All notable changes to the Anolis Device Provider Protocol (ADPP) are documented
 
 ## [Unreleased]
 
+### Added
+
+- **§2 config-schema discovery convention** (executable-profile, **waivable**).
+  The executable profile defines a configless `--config-schema` verb: a compliant
+  provider prints its config **JSON Schema** on stdout in a thin versioned
+  envelope (`config_schema_version` + `schema`, `provider` recommended) and exits
+  `0`. The schema is provider-owned and binary-emitted (version-matched, no
+  separate artifact). Asserted by `test_cli_config_schema`, validated hermetically
+  by `test_selftest_config_schema_envelope_validator`. Deliberately **not** an
+  ADPP capability (a schema advertised over ADPP would be unreachable before a
+  valid config exists) and — unlike a capability or the §7.3 gate — the harness
+  **skips** a provider that does not yet implement the verb (it exits non-zero on
+  the unrecognized flag), so no existing provider is turned red on upgrade and
+  third-party providers need zero protocol coordination. Mirrors the
+  `--provider-profile` ownership model (the provider owns its schema in its own
+  repo; the protocol never re-releases for a provider-specific schema). No
+  wire/proto change. (#62)
+
 ## [v1.6.0] — 2026-06-24
 
 ### Added

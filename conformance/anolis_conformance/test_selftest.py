@@ -15,6 +15,7 @@ import pytest
 
 from .checks import (
     ConformanceFailure,
+    assert_config_schema_envelope,
     assert_controlled_malformed,
     assert_freshness_hint_not_fatal,
     assert_function_ids_per_type_from_one,
@@ -382,3 +383,32 @@ def test_selftest_profile_loader_rejects_invalid(tmp_path, body) -> None:
     load_profile.cache_clear()
     with pytest.raises(SystemExit):
         load_profile(f)
+
+
+def test_selftest_config_schema_envelope_validator() -> None:
+    # Prove the real validator the executable-profile suite runs
+    # (checks.assert_config_schema_envelope): a good envelope passes; every
+    # malformed shape is rejected. Pure string in -> validator; no fake binary.
+    import json
+
+    good = json.dumps(
+        {
+            "config_schema_version": 1,
+            "provider": "anolis-provider-x",
+            "schema": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object"},
+        }
+    )
+    assert_config_schema_envelope(good)  # must NOT raise
+
+    for bad in (
+        "not json",  # unparseable
+        json.dumps([1, 2, 3]),  # top-level not an object
+        json.dumps({"schema": {"type": "object"}}),  # missing version
+        json.dumps({"config_schema_version": 0, "schema": {}}),  # version < 1
+        json.dumps({"config_schema_version": True, "schema": {}}),  # bool is not a version
+        json.dumps({"config_schema_version": "1", "schema": {}}),  # non-int version
+        json.dumps({"config_schema_version": 1}),  # missing schema
+        json.dumps({"config_schema_version": 1, "schema": "x"}),  # schema not an object
+    ):
+        with pytest.raises(ConformanceFailure):
+            assert_config_schema_envelope(bad)
