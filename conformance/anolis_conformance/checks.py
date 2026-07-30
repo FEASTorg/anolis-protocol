@@ -7,6 +7,7 @@ a reimplementation that could drift from what the suite actually enforces.
 
 from __future__ import annotations
 
+import json
 import re
 from types import SimpleNamespace
 
@@ -104,6 +105,30 @@ def assert_function_ids_per_type_from_one(device_id: str, capabilities) -> None:
         raise ConformanceFailure(
             f"device {device_id!r}: function_ids should be per-type {{1..{len(ids)}}}; got {ids}"
         )
+
+
+def assert_config_schema_envelope(stdout: str) -> None:
+    """Anolis executable profile §2: ``--config-schema`` prints a thin, versioned
+    envelope wrapping a provider-owned JSON Schema. Asserts *shape* only — a
+    parseable JSON **object**; an integer ``config_schema_version`` >= 1; and
+    ``schema`` a JSON object (JSON-Schema-shaped). The *content* of ``schema`` is
+    provider-owned and deliberately NOT asserted. See
+    ``docs/profiles/anolis-executable-profile-v1.md``; waivable."""
+    try:
+        doc = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        raise ConformanceFailure(
+            f"--config-schema must print a JSON object to stdout; got unparseable output ({exc})"
+        )
+    if not isinstance(doc, dict):
+        raise ConformanceFailure(f"--config-schema envelope must be a JSON object; got {type(doc).__name__}")
+    ver = doc.get("config_schema_version")
+    # bool is an int subclass — reject it explicitly (matches profiles.py's level guard).
+    if isinstance(ver, bool) or not isinstance(ver, int) or ver < 1:
+        raise ConformanceFailure(f"envelope 'config_schema_version' must be an integer >= 1; got {ver!r}")
+    schema = doc.get("schema")
+    if not isinstance(schema, dict):
+        raise ConformanceFailure(f"envelope 'schema' must be a JSON object (a JSON Schema); got {type(schema).__name__}")
 
 
 def _defined_error_codes(codes: SimpleNamespace) -> set[int]:

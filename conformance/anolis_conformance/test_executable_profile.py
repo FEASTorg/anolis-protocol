@@ -15,7 +15,11 @@ import subprocess
 
 import pytest
 
-from .checks import assert_function_ids_per_type_from_one, assert_signal_ids_snake_case
+from .checks import (
+    assert_config_schema_envelope,
+    assert_function_ids_per_type_from_one,
+    assert_signal_ids_snake_case,
+)
 from .client import AdppClient
 
 # Every test here is an Anolis executable-profile convention — the only tests a
@@ -48,7 +52,7 @@ def test_wait_ready_reports_init_time_ms(client: AdppClient, codes, status_text)
 
 # ---- capability conventions ---------------------------------------------
 def test_signal_ids_snake_case(client: AdppClient) -> None:
-    # Convention: signal_id is snake_case (see the executable profile, §4).
+    # Convention: signal_id is snake_case (see the executable profile, §5).
     caps = _device_capabilities(client)
     if not caps:
         pytest.skip("provider exposes no devices")
@@ -57,7 +61,7 @@ def test_signal_ids_snake_case(client: AdppClient) -> None:
 
 
 def test_function_ids_per_type_from_one(client: AdppClient) -> None:
-    # Convention: each device's function_ids are per-type {1..N} (see §4).
+    # Convention: each device's function_ids are per-type {1..N} (see §5).
     caps = _device_capabilities(client)
     if not caps:
         pytest.skip("provider exposes no devices")
@@ -91,3 +95,14 @@ def test_cli_check_config_ok(provider_bin, provider_config) -> None:
         timeout=10,
     )
     assert proc.returncode == 0, f"`--check-config` on a valid config must exit 0; got {proc.returncode}"
+
+
+def test_cli_config_schema(provider_bin) -> None:
+    # `--config-schema` is configless (§2). If the provider does not recognize the
+    # verb it exits non-zero (a usage error) — SKIP, no waiver needed: this is how
+    # the convention adopts with zero coordination. If it exits 0 the envelope MUST
+    # be valid.
+    proc = subprocess.run([str(provider_bin), "--config-schema"], capture_output=True, text=True, timeout=10)
+    if proc.returncode != 0:
+        pytest.skip("provider does not implement --config-schema (unrecognized verb)")
+    assert_config_schema_envelope(proc.stdout)
