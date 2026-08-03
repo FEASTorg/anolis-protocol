@@ -4,6 +4,8 @@ All notable changes to the Anolis Device Provider Protocol (ADPP) are documented
 
 ## [Unreleased]
 
+## [v1.7.0] — 2026-08-02
+
 ### Added
 
 - **§2 config-schema discovery convention** (executable-profile, **waivable**).
